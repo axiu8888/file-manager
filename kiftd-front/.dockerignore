@@ -1,0 +1,7 @@
+# 若将来以前端目录为构建上下文时使用
+.git
+node_modules
+dist
+.vscode
+*.log
+.DS_Store

@@ -1,0 +1,10 @@
+# 若将来以后端目录为构建上下文时使用
+.git
+.gradle
+.idea
+build
+data
+**/data/**
+*.log
+*.iml
+.DS_Store

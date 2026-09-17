@@ -1,0 +1,41 @@
+# 使用外部 PostgreSQL 的生产配置（Docker / 同域 nginx）
+# 启动示例：
+#   java -jar app.jar --spring.profiles.active=prod \
+#     --spring.config.additional-location=file:./config/
+# 或通过环境变量覆盖（推荐）：
+#   SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/kiftd
+#   SPRING_DATASOURCE_USERNAME=kiftd
+#   SPRING_DATASOURCE_PASSWORD=change-me
+#   KIFTD_EMBEDDED_PG=false
+#   KIFTD_STORAGE_ROOT=/opt/apps/kiftd/data/filenodes
+#   KIFTD_JWT_SECRET=change-me
+#   SERVER_PORT=8080
+
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/kiftd}
+    username: ${SPRING_DATASOURCE_USERNAME:kiftd}
+    password: ${SPRING_DATASOURCE_PASSWORD:kiftd}
+    driver-class-name: org.postgresql.Driver
+
+kiftd:
+  embedded-pg: false
+  jwt:
+    secret: ${KIFTD_JWT_SECRET:change-me}
+    expire-hours: ${KIFTD_JWT_EXPIRE_HOURS:72}
+  storage:
+    root: ${KIFTD_STORAGE_ROOT:/opt/apps/kiftd/data/filenodes}
+    temp: ${KIFTD_STORAGE_TEMP:/opt/apps/kiftd/data/temp}
+  cors:
+    # 同域经 nginx 访问可留空；跨域再填写，逗号分隔
+    allowed-origins: ${KIFTD_CORS_ALLOWED_ORIGINS:}
+  admin:
+    username: ${KIFTD_ADMIN_USERNAME:admin}
+    password: ${KIFTD_ADMIN_PASSWORD:change-me}
+  signup:
+    enabled: ${KIFTD_SIGNUP_ENABLED:true}
+  ffmpeg:
+    path: ${KIFTD_FFMPEG_PATH:ffmpeg}

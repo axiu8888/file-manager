@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+GRADLE_HOME="${GRADLE_HOME:-/d/develop/env/gradles/8.14}"
+exec "$GRADLE_HOME/bin/gradle" "$@"

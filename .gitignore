@@ -1,0 +1,23 @@
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Build / deps
+**/node_modules/
+**/dist/
+**/.gradle/
+**/build/
+*.log
+
+# Runtime data
+**/data/
+deploy/dist/app.jar
+deploy/dist/front/
+deploy/.env
+
+# Secrets
+.env
+**/.env
+!**/.env.example

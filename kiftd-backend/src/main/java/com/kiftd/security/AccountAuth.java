@@ -1,0 +1,12 @@
+package com.kiftd.security;
+
+public enum AccountAuth {
+    CREATE_NEW_FOLDER,
+    UPLOAD_FILES,
+    DELETE_FILE_OR_FOLDER,
+    RENAME_FILE_OR_FOLDER,
+    DOWNLOAD_FILES,
+    MOVE_FILES;
+
+    public static final String ALL = "CREATE_NEW_FOLDER,UPLOAD_FILES,DELETE_FILE_OR_FOLDER,RENAME_FILE_OR_FOLDER,DOWNLOAD_FILES,MOVE_FILES";
+}

@@ -1,0 +1,62 @@
+:root {
+  --bg: #eef2f6;
+  --panel: #ffffff;
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --accent: #0f766e;
+  --accent-2: #115e59;
+  --line: #dbe3ec;
+  --danger: #b91c1c;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #d9f3ef 0%, transparent 55%),
+    radial-gradient(900px 400px at 100% 0%, #e7eef8 0%, transparent 50%),
+    var(--bg);
+}
+a { color: var(--accent); text-decoration: none; }
+#app { min-height: 100vh; }
+
+.page-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.brand-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.brand-sub {
+  color: var(--muted);
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.auth-card {
+  width: min(420px, 92vw);
+  margin: 12vh auto 0;
+  padding: 28px 28px 22px;
+}
+
+.meta-line {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0;
+}

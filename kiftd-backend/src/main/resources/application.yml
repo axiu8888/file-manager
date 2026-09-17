@@ -1,0 +1,63 @@
+server:
+  port: 80
+  servlet:
+    context-path: /
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force-request: true
+      force-response: false
+
+spring:
+  application:
+    name: kiftd-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: 123456
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: -1
+      max-request-size: -1
+  mvc:
+    async:
+      # 视频/大文件流式传输可能超过默认 30s
+      request-timeout: 3600000
+
+kiftd:
+  embedded-pg: false
+  jwt:
+    secret: kiftd-dev-secret-change-me-to-a-long-random-string-at-least-256-bits
+    expire-hours: 72
+  storage:
+    root: ./data/filenodes
+    temp: ./data/temp
+  signup:
+    enabled: true
+  ffmpeg:
+    path: ffmpeg
+  cors:
+    allowed-origins: http://localhost:5173,http://127.0.0.1:5173
+  admin:
+    username: root
+    password: admin
+  select-step: 100
+  webdav:
+    enabled: true
+    path: /webdav/*
+
+logging:
+  level:
+    com.kiftd: INFO
