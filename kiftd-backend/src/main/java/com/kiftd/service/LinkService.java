@@ -7,10 +7,11 @@ import com.kiftd.entity.FileNode;
 import com.kiftd.repository.DownloadKeyRepository;
 import com.kiftd.repository.FileChainRepository;
 import com.kiftd.security.AccountAuth;
+import com.kiftd.util.ContentDispositionUtil;
 import com.kiftd.util.IdUtil;
 import com.kiftd.util.SecurityUtils;
 import com.kiftd.util.StorageService;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -19,8 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -87,11 +86,14 @@ public class LinkService {
     private ResponseEntity<Resource> openFile(String fileId) throws IOException {
         FileNode node = fileService.requireFile(fileId);
         Path path = storageService.resolveBlock(node.getFilePath());
-        String encoded = URLEncoder.encode(node.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+        if (!Files.isRegularFile(path)) {
+            throw new BizException("文件数据不存在或已损坏");
+        }
+        long size = Files.size(path);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
-                .contentLength(Files.size(path))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDispositionUtil.attachment(node.getFileName()))
+                .contentLength(size)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(new InputStreamResource(Files.newInputStream(path)));
+                .body(new FileSystemResource(path));
     }
 }

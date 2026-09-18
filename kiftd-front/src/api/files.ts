@@ -1,5 +1,8 @@
-import http, { getArrayBuffer, getBlob, type ApiResponse } from './http'
+import http, { getArrayBuffer, type ApiResponse } from './http'
 import { paths } from './paths'
+import { saveBlob, assertDownloadBlob } from '@/utils/saveBlob'
+import { downloadUrl } from './urls'
+import { useAuthStore } from '@/stores/auth'
 
 export interface Folder {
   folderId: string
@@ -113,13 +116,57 @@ export async function batchDelete(fileIds: string[], folderIds: string[]) {
 }
 
 export async function downloadFile(fileId: string, fileName = '') {
-  const blob = await getBlob(paths.files.download(fileId))
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  a.click()
-  URL.revokeObjectURL(url)
+  // 用 fetch 拉二进制，避开 axios 对 blob 的边角问题，并给出更明确的空内容诊断
+  const auth = useAuthStore()
+  const headers: HeadersInit = {}
+  if (auth.token) headers.Authorization = `Bearer ${auth.token}`
+
+  const res = await fetch(downloadUrl(fileId), { headers, credentials: 'same-origin' })
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const text = await res.text()
+      const json = JSON.parse(text) as { message?: string }
+      if (json.message) detail = json.message
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`下载失败：${detail}`)
+  }
+
+  const buf = await res.arrayBuffer()
+  const contentLength = res.headers.get('content-length')
+  if (buf.byteLength === 0) {
+    if (contentLength === '0') {
+      throw new Error('文件大小为 0 字节（可能上传时未写入内容）')
+    }
+    throw new Error(
+      '下载内容为空（响应体 0 字节）。若刚停过迅雷服务请重试；仍失败请检查服务端文件块是否存在。',
+    )
+  }
+
+  const blob = await assertDownloadBlob(new Blob([buf], { type: 'application/octet-stream' }))
+  const fromHeader = parseContentDispositionFileName(res.headers.get('content-disposition'))
+  const name = (fileName || fromHeader || 'download').trim() || 'download'
+  return saveBlob(blob, name)
+}
+
+function parseContentDispositionFileName(header: unknown): string {
+  if (typeof header !== 'string' || !header) return ''
+  // filename*=UTF-8''...
+  const star = /filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;]+)/i.exec(header)
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^["']|["']$/g, ''))
+    } catch {
+      /* ignore */
+    }
+  }
+  const plain = /filename\s*=\s*([^;]+)/i.exec(header)
+  if (plain?.[1]) {
+    return plain[1].trim().replace(/^["']|["']$/g, '')
+  }
+  return ''
 }
 
 export async function confirmMove(targetFolderId: string, fileIds: string[], folderIds: string[]) {
@@ -230,10 +277,9 @@ export async function fetchPdfPreview(fileId: string, kind = 'pdf') {
 
 export async function zipDownload(fileIds: string[]) {
   const res = await http.post(paths.files.zip, { fileIds }, { responseType: 'blob' })
-  const url = URL.createObjectURL(res.data)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'download.zip'
-  a.click()
-  URL.revokeObjectURL(url)
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`打包下载失败（HTTP ${res.status}）`)
+  }
+  const blob = await assertDownloadBlob(res.data)
+  return saveBlob(blob, 'download.zip')
 }

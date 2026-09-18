@@ -24,6 +24,11 @@ export async function getBlob(path: string) {
   return data
 }
 
+/** Fetch blob and preserve response headers (e.g. Content-Disposition). */
+export async function getBlobResponse(path: string) {
+  return http.get<Blob>(path, { responseType: 'blob' })
+}
+
 http.interceptors.request.use((config) => {
   const auth = useAuthStore()
   if (auth.token) {
@@ -34,6 +39,10 @@ http.interceptors.request.use((config) => {
 
 http.interceptors.response.use(
   (res) => {
+    const rt = res.config.responseType
+    if (rt === 'blob' || rt === 'arraybuffer') {
+      return res
+    }
     const data = res.data
     if (data && typeof data === 'object' && 'code' in data && data.code !== 0) {
       return Promise.reject(new Error(data.message || '请求失败'))

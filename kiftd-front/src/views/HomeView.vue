@@ -22,7 +22,21 @@
 
     <el-alert v-if="notice" :title="notice" type="info" show-icon :closable="false" style="margin-bottom:14px" />
 
-    <div class="panel" style="padding:12px 14px">
+    <div
+      class="panel drop-zone"
+      :class="{ 'is-dragover': dragOver }"
+      style="padding:12px 14px"
+      @dragenter="onDragEnter"
+      @dragover="onDragOver"
+      @dragleave="onDragLeave"
+      @drop="onDrop"
+    >
+      <div v-if="dragOver" class="drop-overlay">
+        <div class="drop-overlay-inner">
+          <el-icon :size="36"><Upload /></el-icon>
+          <p>{{ auth.isLogin ? '松开即可上传文件或文件夹' : '请先登录后再上传' }}</p>
+        </div>
+      </div>
       <div class="toolbar">
         <div class="path-row">
           <el-breadcrumb separator="/">
@@ -145,7 +159,7 @@
               <el-button link type="primary" class="op-preview" @click="onOpen(row)">
                 {{ row.kind === 'folder' ? '打开' : '预览' }}
               </el-button>
-              <el-button v-if="row.kind === 'file'" link type="success" @click="download(row.id)">下载</el-button>
+              <el-button v-if="row.kind === 'file'" link type="success" @click="download(row)">下载</el-button>
               <el-button link type="warning" @click="renameRow(row)">重命名</el-button>
               <el-button link type="danger" @click="removeRow(row)">删除</el-button>
               <el-dropdown v-if="row.kind === 'file'" trigger="click">
@@ -332,6 +346,8 @@ const keyword = ref('')
 const folderStats = ref<{ folderCount: number; fileCount: number; totalSize: string } | null>(null)
 const selected = ref<Row[]>([])
 const uploadProgress = ref(-1)
+const dragOver = ref(false)
+let dragDepth = 0
 const openChangePwd = ref(false)
 const oldPwd = ref('')
 const newPwd = ref('')
@@ -533,6 +549,140 @@ async function onFilesPicked(e: Event) {
   await uploadFilesBatch(files)
 }
 
+function isFileDrag(e: DragEvent) {
+  return Array.from(e.dataTransfer?.types || []).includes('Files')
+}
+
+function onDragEnter(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  dragDepth++
+  dragOver.value = true
+}
+
+function onDragOver(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = auth.isLogin ? 'copy' : 'none'
+}
+
+function onDragLeave(e: DragEvent) {
+  if (!isFileDrag(e)) return
+  e.preventDefault()
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragOver.value = false
+}
+
+async function onDrop(e: DragEvent) {
+  e.preventDefault()
+  dragDepth = 0
+  dragOver.value = false
+  if (!auth.isLogin) {
+    ElMessage.warning('请先登录后再上传')
+    return
+  }
+  if (!view.value || !e.dataTransfer) return
+  try {
+    const files = await collectDroppedFiles(e.dataTransfer)
+    if (!files.length) {
+      ElMessage.info('未识别到可上传的文件')
+      return
+    }
+    await uploadDroppedFiles(files)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '拖拽上传失败')
+  }
+}
+
+/** Traverse FileSystemEntry tree (supports folder drop). */
+async function collectDroppedFiles(dt: DataTransfer): Promise<Array<File & { webkitRelativePath?: string }>> {
+  const out: Array<File & { webkitRelativePath?: string }> = []
+  const items = dt.items
+  if (items?.length) {
+    const entries: FileSystemEntry[] = []
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry?.()
+      if (entry) entries.push(entry)
+    }
+    if (entries.length) {
+      for (const entry of entries) {
+        await walkFsEntry(entry, '', out)
+      }
+      return out
+    }
+  }
+  // Fallback: flat file list (no directory metadata)
+  return Array.from(dt.files || []) as Array<File & { webkitRelativePath?: string }>
+}
+
+function readDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  return new Promise((resolve, reject) => {
+    const all: FileSystemEntry[] = []
+    const readBatch = () => {
+      reader.readEntries((batch) => {
+        if (!batch.length) {
+          resolve(all)
+          return
+        }
+        all.push(...batch)
+        readBatch()
+      }, reject)
+    }
+    readBatch()
+  })
+}
+
+async function walkFsEntry(
+  entry: FileSystemEntry,
+  parentPath: string,
+  out: Array<File & { webkitRelativePath?: string }>,
+) {
+  if (entry.isFile) {
+    const file = await new Promise<File>((resolve, reject) => {
+      ;(entry as FileSystemFileEntry).file(resolve, reject)
+    })
+    const rel = parentPath ? `${parentPath}/${file.name}` : file.name
+    Object.defineProperty(file, 'webkitRelativePath', { value: rel, configurable: true })
+    out.push(file as File & { webkitRelativePath?: string })
+    return
+  }
+  if (entry.isDirectory) {
+    const dirPath = parentPath ? `${parentPath}/${entry.name}` : entry.name
+    const reader = (entry as FileSystemDirectoryEntry).createReader()
+    const children = await readDirectoryEntries(reader)
+    for (const child of children) {
+      await walkFsEntry(child, dirPath, out)
+    }
+  }
+}
+
+async function uploadDroppedFiles(files: Array<File & { webkitRelativePath?: string }>) {
+  const hasNested = files.some((f) => {
+    const rel = f.webkitRelativePath || ''
+    return rel.includes('/')
+  })
+  if (!hasNested) {
+    await uploadFilesBatch(files)
+    return
+  }
+  uploadProgress.value = 0
+  let ok = 0
+  try {
+    for (let i = 0; i < files.length; i++) {
+      await uploadOneWithRelativePath(files[i])
+      ok++
+      uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
+    }
+    ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`)
+    refresh()
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+    if (ok > 0) refresh()
+  } finally {
+    uploadProgress.value = -1
+  }
+}
+
 async function uploadFilesBatch(files: File[]) {
   const folderId = view.value!.folder.folderId
   uploadProgress.value = 0
@@ -589,9 +739,7 @@ async function uploadFilesBatch(files: File[]) {
 /** Shared across concurrent directory-upload requests to avoid duplicate createFolder races. */
 const folderPathCache = new Map<string, string>()
 
-async function doUploadFolder(opt: UploadRequestOptions) {
-  // directory upload: browser provides webkitRelativePath
-  const file = opt.file as File & { webkitRelativePath?: string }
+async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: string }) {
   const rel = file.webkitRelativePath || file.name
   const parts = rel.split('/')
   let parentId = view.value!.folder.folderId
@@ -610,11 +758,21 @@ async function doUploadFolder(opt: UploadRequestOptions) {
   }
   const check = await checkUpload(parentId, [file.name])
   await uploadFile(parentId, file, check.uploadKey, true)
+}
+
+async function doUploadFolder(opt: UploadRequestOptions) {
+  const file = opt.file as File & { webkitRelativePath?: string }
+  await uploadOneWithRelativePath(file)
   refresh()
 }
 
-function download(fileId: string) {
-  downloadFile(fileId)
+async function download(row: Row) {
+  try {
+    const ok = await downloadFile(row.id, row.name)
+    if (ok) ElMessage.success('已开始下载')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '下载失败')
+  }
 }
 
 async function renameRow(row: Row) {
@@ -641,7 +799,12 @@ async function doBatchDelete() {
 }
 
 async function doZip() {
-  await zipDownload(selectedFiles.value.map((r) => r.id))
+  try {
+    const ok = await zipDownload(selectedFiles.value.map((r) => r.id))
+    if (ok) ElMessage.success('已开始打包下载')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '打包下载失败')
+  }
 }
 
 function startMove(copy: boolean) {
@@ -884,6 +1047,41 @@ onMounted(async () => {
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+.drop-zone {
+  position: relative;
+}
+.drop-zone.is-dragover {
+  outline: 2px dashed var(--accent, #0f766e);
+  outline-offset: -2px;
+}
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 118, 110, 0.08);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+  border-radius: inherit;
+}
+.drop-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 28px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0f766e;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+.drop-overlay-inner p {
+  margin: 0;
 }
 .toolbar {
   display: flex;

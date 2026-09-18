@@ -7,10 +7,11 @@ import com.kiftd.entity.Folder;
 import com.kiftd.repository.FileNodeRepository;
 import com.kiftd.repository.FolderRepository;
 import com.kiftd.security.AccountAuth;
+import com.kiftd.util.ContentDispositionUtil;
 import com.kiftd.util.IdUtil;
 import com.kiftd.util.SecurityUtils;
 import com.kiftd.util.StorageService;
-import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -24,7 +25,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -180,11 +180,15 @@ public class FileService {
         FileNode node = requireFile(fileId);
         folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
         Path path = storageService.resolveBlock(node.getFilePath());
-        InputStreamResource resource = new InputStreamResource(Files.newInputStream(path));
-        String encoded = URLEncoder.encode(node.getFileName(), StandardCharsets.UTF_8).replace("+", "%20");
+        if (!Files.isRegularFile(path)) {
+            throw new BizException("文件数据不存在或已损坏");
+        }
+        long size = Files.size(path);
+        // FileSystemResource 比 InputStreamResource 更稳妥，避免流被读空导致 0 字节响应
+        Resource resource = new FileSystemResource(path);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encoded)
-                .contentLength(Files.size(path))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDispositionUtil.attachment(node.getFileName()))
+                .contentLength(size)
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
     }
