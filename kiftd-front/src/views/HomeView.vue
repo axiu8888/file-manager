@@ -131,7 +131,13 @@
         <el-table-column label="名称" min-width="280" header-align="center" sortable :sort-method="sortByName">
           <template #default="{ row }">
             <span class="name-cell" :class="{ 'is-folder': row.kind === 'folder' }" @click="onOpen(row)">
-              <span v-if="showThumb(row)" class="file-thumb-wrap" :class="fileIconClass(row)">
+              <span
+                v-if="showThumb(row)"
+                class="file-thumb-wrap"
+                :class="fileIconClass(row)"
+                @mouseenter="onThumbEnter($event, row)"
+                @mouseleave="onThumbLeave"
+              >
                 <img
                   class="file-thumb"
                   :src="thumbSrc(row)"
@@ -292,6 +298,18 @@
         <el-button type="primary" @click="copyLink">复制</el-button>
       </template>
     </el-dialog>
+
+    <Teleport to="body">
+      <div
+        v-if="thumbHover"
+        class="thumb-pop"
+        :style="{ left: `${thumbHover.left}px`, top: `${thumbHover.top}px` }"
+      >
+        <img class="thumb-pop-img" :src="thumbHover.src" :alt="thumbHover.name" />
+        <span v-if="thumbHover.video" class="thumb-pop-badge">视频</span>
+        <div class="thumb-pop-name" :title="thumbHover.name">{{ thumbHover.name }}</div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1060,6 +1078,37 @@ function onThumbError(fileId: string) {
   const next = new Set(thumbFailed.value)
   next.add(fileId)
   thumbFailed.value = next
+  if (thumbHover.value?.id === fileId) thumbHover.value = null
+}
+
+const thumbHover = ref<{ id: string; src: string; name: string; video: boolean; left: number; top: number } | null>(
+  null,
+)
+
+function onThumbEnter(e: MouseEvent, row: Row) {
+  const el = e.currentTarget as HTMLElement | null
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  const popW = 320
+  const popH = 280
+  let left = rect.right + 12
+  let top = rect.top - 4
+  if (left + popW > window.innerWidth - 8) left = Math.max(8, rect.left - popW - 12)
+  if (top + popH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - popH - 8)
+  thumbHover.value = {
+    id: row.id,
+    src: thumbSrc(row),
+    name: row.name,
+    video: isVideo(row.name),
+    left,
+    top,
+  }
+  window.addEventListener('scroll', onThumbLeave, true)
+}
+
+function onThumbLeave() {
+  thumbHover.value = null
+  window.removeEventListener('scroll', onThumbLeave, true)
 }
 
 async function preview(row: Row) {
@@ -1389,6 +1438,7 @@ onMounted(async () => {
   overflow: hidden;
   background: #e5e7eb;
   border: 1px solid #d1d5db;
+  cursor: zoom-in;
 }
 .file-thumb {
   width: 100%;
@@ -1407,6 +1457,44 @@ onMounted(async () => {
   border-color: transparent transparent transparent rgba(255, 255, 255, 0.92);
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.55));
   pointer-events: none;
+}
+.thumb-pop {
+  position: fixed;
+  z-index: 5000;
+  width: 320px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+.thumb-pop-img {
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+  display: block;
+  background: #111827;
+  border-radius: 6px;
+}
+.thumb-pop-badge {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  font-size: 12px;
+  line-height: 1;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.72);
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+.thumb-pop-name {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .icon-folder { color: #e6a23c; }
 .icon-image { color: #67c23a; }

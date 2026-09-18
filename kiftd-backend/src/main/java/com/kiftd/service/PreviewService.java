@@ -42,7 +42,7 @@ public class PreviewService {
     private final Map<String, String> transcodeStatus = new ConcurrentHashMap<>();
     private final Map<String, byte[]> pptSlideCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Object> thumbLocks = new ConcurrentHashMap<>();
-    private static final int THUMB_MAX_EDGE = 160;
+    private static final int THUMB_MAX_EDGE = 480;
 
     public PreviewService(FileNodeRepository fileNodeRepository, FileService fileService,
                           FolderService folderService, StorageService storageService, KiftdProperties props) {
@@ -322,7 +322,7 @@ public class PreviewService {
         } catch (IOException e) {
             throw new BizException("读取文件失败");
         }
-        String cacheName = fileId + "_" + mtime + ".jpg";
+        String cacheName = fileId + "_" + mtime + "_" + THUMB_MAX_EDGE + ".jpg";
         Path cache = storageService.resolveThumb(cacheName);
         try {
             if (Files.isRegularFile(cache)) {
