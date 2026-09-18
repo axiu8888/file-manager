@@ -268,7 +268,8 @@ import { useAuthStore } from '@/stores/auth'
 import AppWindow from '@/components/AppWindow.vue'
 import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
-import { getSiblings, getExcel, getPpt, saveTextContent } from '@/api/files'
+import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, saveTextContent } from '@/api/files'
+import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl } from '@/api/urls'
 
 // Vite: use bundled worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -492,7 +493,7 @@ function stopVideo() {
   })
   document.querySelectorAll('iframe').forEach((frame) => {
     const s = frame.getAttribute('src') || ''
-    if (!s.includes('/api/preview/resource/') || !s.includes(id)) return
+    if (!isPreviewResourceUrl(s, id)) return
     frame.removeAttribute('src')
   })
 }
@@ -703,22 +704,6 @@ async function goToc(item: TocItem) {
   }
 }
 
-function pdfApiPath() {
-  const kind = props.kind || 'pdf'
-  const id = activeId()
-  if (kind === 'txt') return `/api/preview/txt-pdf/${id}`
-  if (kind === 'office') return `/api/preview/office-pdf/${id}`
-  return `/api/preview/pdf/${id}`
-}
-
-async function authFetch(url: string) {
-  const headers: HeadersInit = {}
-  if (auth.token) headers.Authorization = `Bearer ${auth.token}`
-  const res = await fetch(url, { headers })
-  if (!res.ok) throw new Error(`加载失败（HTTP ${res.status}）`)
-  return res
-}
-
 async function waitForEpubEl(seq: number, tries = 30): Promise<HTMLElement> {
   for (let i = 0; i < tries; i++) {
     if (seq !== loadSeq) throw new Error('cancelled')
@@ -797,8 +782,7 @@ async function goPdfToc(item: PdfTocItem) {
 }
 
 async function loadPdf() {
-  const res = await authFetch(pdfApiPath())
-  const buf = await res.arrayBuffer()
+  const buf = await fetchPdfPreview(activeId(), props.kind || 'pdf')
   if (!buf.byteLength) throw new Error('PDF 内容为空')
 
   const title = displayTitle.value.endsWith('.pdf') ? displayTitle.value : `${displayTitle.value}`
@@ -837,10 +821,9 @@ async function loadPdf() {
 }
 
 async function loadVideo() {
-  const token = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
   const id = activeId()
   // 与 PDF iframe 分离，避免隐藏 iframe 同时拉视频并出声
-  videoSrc.value = `/api/preview/resource/${id}${token}`
+  videoSrc.value = previewResourceUrl(id, auth.token)
 }
 
 async function loadSiblings() {
@@ -904,8 +887,7 @@ async function playVideoOnce() {
 }
 
 async function loadEpub(seq: number) {
-  const res = await authFetch(`/api/preview/resource/${activeId()}`)
-  const buf = await res.arrayBuffer()
+  const buf = await fetchPreviewResource(activeId())
   if (!buf || buf.byteLength < 100) {
     throw new Error('EPUB 文件无效或为空')
   }
@@ -1099,8 +1081,7 @@ function onKey(e: KeyboardEvent) {
 }
 
 async function loadText() {
-  const res = await authFetch(`/api/preview/resource/${activeId()}`)
-  const buf = await res.arrayBuffer()
+  const buf = await fetchPreviewResource(activeId())
   if (buf.byteLength > TEXT_MAX_BYTES) {
     throw new Error('文件过大（超过 5MB），请下载后查看')
   }
@@ -1168,8 +1149,7 @@ async function loadExcel() {
 }
 
 function pptSlideSrc(index: number) {
-  const token = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
-  return `/api/preview/ppt-slide/${activeId()}/${index}${token}`
+  return pptSlideUrl(activeId(), index, auth.token)
 }
 
 function goPpt(index: number) {

@@ -23,6 +23,7 @@ spring:
 
 kiftd:
   embedded-pg: false
+  api-prefix: ${KIFTD_API_PREFIX:/api}
   jwt:
     secret: ${KIFTD_JWT_SECRET:change-me}
     expire-hours: ${KIFTD_JWT_EXPIRE_HOURS:72}

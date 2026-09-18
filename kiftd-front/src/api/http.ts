@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
+import { API_PREFIX } from './prefix'
 
 export interface ApiResponse<T> {
   code: number
@@ -9,9 +10,19 @@ export interface ApiResponse<T> {
 }
 
 const http = axios.create({
-  baseURL: '/api',
+  baseURL: API_PREFIX,
   timeout: 600000,
 })
+
+export async function getArrayBuffer(path: string) {
+  const { data } = await http.get<ArrayBuffer>(path, { responseType: 'arraybuffer' })
+  return data
+}
+
+export async function getBlob(path: string) {
+  const { data } = await http.get<Blob>(path, { responseType: 'blob' })
+  return data
+}
 
 http.interceptors.request.use((config) => {
   const auth = useAuthStore()

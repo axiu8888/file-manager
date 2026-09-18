@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/links")
+@RequestMapping("${kiftd.api-prefix:/api}/links")
 public class LinkController {
 
     private final LinkService linkService;

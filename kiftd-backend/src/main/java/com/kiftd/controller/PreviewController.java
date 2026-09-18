@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Locale;
 
 @RestController
-@RequestMapping("/api/preview")
+@RequestMapping("${kiftd.api-prefix:/api}/preview")
 public class PreviewController {
 
     private final PreviewService previewService;

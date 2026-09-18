@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/folders")
+@RequestMapping("${kiftd.api-prefix:/api}/folders")
 public class FolderController {
 
     private final FolderService folderService;

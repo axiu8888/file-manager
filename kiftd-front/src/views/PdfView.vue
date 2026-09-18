@@ -13,10 +13,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { fetchPdfPreview } from '@/api/files'
 
 const route = useRoute()
-const auth = useAuthStore()
 const fileId = computed(() => route.params.fileId as string)
 const kind = computed(() => (route.query.kind as string) || 'pdf')
 const title = ref((route.query.name as string) || 'PDF 预览')
@@ -33,22 +32,8 @@ async function load() {
   src.value = ''
   document.title = title.value
   try {
-    const path =
-      kind.value === 'txt'
-        ? `/api/preview/txt-pdf/${fileId.value}`
-        : kind.value === 'office'
-          ? `/api/preview/office-pdf/${fileId.value}`
-          : `/api/preview/pdf/${fileId.value}`
-    const headers: HeadersInit = {}
-    if (auth.token) {
-      headers.Authorization = `Bearer ${auth.token}`
-    }
-    const res = await fetch(path, { headers })
-    if (!res.ok) {
-      throw new Error('无法加载 PDF')
-    }
-    const blob = await res.blob()
-    objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+    const buf = await fetchPdfPreview(fileId.value, kind.value)
+    objectUrl = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }))
     src.value = objectUrl
   } catch (e: any) {
     error.value = e.message || 'PDF 打开失败'

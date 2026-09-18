@@ -2,6 +2,15 @@
 .idea/
 .vscode/
 *.iml
+
+deploy/kiftd-backend/*.jar
+deploy/kiftd-backend/data
+deploy/kiftd-backend/logs
+deploy/kiftd-front/*
+deploy/postgres/data
+deploy/nginx/log
+deploy/nginx/share
+
 .DS_Store
 
 # Build / deps

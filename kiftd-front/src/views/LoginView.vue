@@ -10,9 +10,9 @@
         <el-form-item label="密码">
           <el-input v-model="password" type="password" show-password autocomplete="current-password" />
         </el-form-item>
-        <el-form-item v-if="needCaptcha" label="验证码">
+        <el-form-item label="验证码">
           <div style="display:flex;gap:8px;width:100%">
-            <el-input v-model="captcha" />
+            <el-input v-model="captcha" autocomplete="off" />
             <img
               v-if="captchaImg"
               :src="'data:image/png;base64,' + captchaImg"
@@ -46,7 +46,6 @@ const password = ref('')
 const captcha = ref('')
 const captchaId = ref('')
 const captchaImg = ref('')
-const needCaptcha = ref(false)
 const canSignup = ref(false)
 const loading = ref(false)
 
@@ -54,13 +53,17 @@ async function loadCaptcha() {
   const c = await getCaptcha()
   captchaId.value = c.captchaId
   captchaImg.value = c.imageBase64
-  needCaptcha.value = true
+  captcha.value = ''
 }
 
 async function onSubmit() {
+  if (!captcha.value.trim()) {
+    ElMessage.warning('请输入验证码')
+    return
+  }
   loading.value = true
   try {
-    const res = await login(account.value, password.value, captchaId.value || undefined, captcha.value || undefined)
+    const res = await login(account.value, password.value, captchaId.value, captcha.value)
     auth.setSession(res.token, res.account, res.auth)
     ElMessage.success('登录成功')
     router.push('/')
@@ -74,5 +77,6 @@ async function onSubmit() {
 
 onMounted(async () => {
   canSignup.value = await signupEnabled()
+  await loadCaptcha()
 })
 </script>

@@ -6,7 +6,7 @@ import com.kiftd.service.AccountService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("${kiftd.api-prefix:/api}/auth")
 public class AuthController {
 
     private final AccountService accountService;

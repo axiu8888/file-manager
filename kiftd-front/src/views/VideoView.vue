@@ -24,11 +24,10 @@
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getTranscodeStatus, getVideo } from '@/api/files'
-import { useAuthStore } from '@/stores/auth'
+import { previewResourceUrl } from '@/api/urls'
 import { bindVideoVolume } from '@/utils/mediaVolume'
 
 const route = useRoute()
-const auth = useAuthStore()
 const fileId = route.params.fileId as string
 const fileName = ref('')
 const status = ref('')
@@ -42,13 +41,13 @@ async function poll() {
   fileName.value = info.fileName
   if (!info.needTranscode) {
     ready.value = true
-    src.value = `/api/preview/resource/${fileId}${auth.token ? '' : ''}`
+    src.value = previewResourceUrl(fileId)
     return
   }
   status.value = await getTranscodeStatus(fileId)
   if (status.value === 'FIN') {
     ready.value = true
-    src.value = `/api/preview/resource/${fileId}`
+    src.value = previewResourceUrl(fileId)
     return
   }
   if (status.value === 'ERROR') {

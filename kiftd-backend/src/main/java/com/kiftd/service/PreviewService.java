@@ -64,7 +64,7 @@ public class PreviewService {
                     index = i;
                 }
                 list.add(new FileDtos.PictureInfo(f.getFileId(), f.getFileName(),
-                        "/api/preview/resource/" + f.getFileId()));
+                        props.apiPath("/preview/resource/" + f.getFileId())));
                 i++;
             }
         }
@@ -77,7 +77,7 @@ public class PreviewService {
         for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(folderId)) {
             if (isAudio(f.getFileName())) {
                 list.add(new FileDtos.AudioInfo(f.getFileId(), f.getFileName(),
-                        "/api/preview/resource/" + f.getFileId(), "未知艺术家", ""));
+                        props.apiPath("/preview/resource/" + f.getFileId()), "未知艺术家", ""));
             }
         }
         return list;

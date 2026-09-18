@@ -18,6 +18,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -39,17 +40,21 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/error").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/system/**").permitAll()
-                        .requestMatchers("/api/links/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/folders/view", "/api/folders/remaining", "/api/folders/*/count").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/preview/**").permitAll()
+                .authorizeHttpRequests(auth -> {
+                    String api = props.normalizedApiPrefix();
+                    auth.requestMatchers("/error").permitAll()
+                        .requestMatchers("/auth/**", api + "/auth/**").permitAll()
+                        .requestMatchers("/system/**", api + "/system/**").permitAll()
+                        .requestMatchers("/links/**", api + "/links/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                api + "/folders/view",
+                                api + "/folders/remaining",
+                                api + "/folders/*/count").permitAll()
+                        .requestMatchers(HttpMethod.GET, api + "/preview/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/webdav", "/webdav/**").permitAll()
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -60,16 +65,16 @@ public class SecurityConfig {
             String raw = props.cors() == null || props.cors().allowedOrigins() == null
                     ? ""
                     : props.cors().allowedOrigins();
-            List<String> origins = Arrays.stream(raw.split(","))
+            List<String> patterns = new ArrayList<>(Arrays.stream(raw.split(","))
                     .map(String::trim)
                     .filter(s -> !s.isEmpty())
-                    .toList();
-            // 未配置来源：不启用 CORS 头（同域经 nginx 访问）；跨域需显式配置
-            if (origins.isEmpty()) {
-                return null;
+                    .toList());
+            if (patterns.isEmpty() || patterns.stream().anyMatch("*"::equals)) {
+                patterns = List.of("*");
             }
             CorsConfiguration config = new CorsConfiguration();
-            config.setAllowedOrigins(origins);
+            // 不能用 setAllowedOrigins("*") + allowCredentials(true)，Spring 会直接抛异常
+            config.setAllowedOriginPatterns(patterns);
             config.setAllowCredentials(true);
             config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "PROPFIND", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK", "HEAD"));
             config.setAllowedHeaders(List.of("*"));

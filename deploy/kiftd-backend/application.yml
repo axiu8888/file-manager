@@ -1,7 +1,7 @@
 server:
   port: 80
   servlet:
-    # 必须保持 /。REST 前缀用 kiftd.api-prefix；改 context-path 会连 WebDAV 一起套进去，还会和 api-prefix 叠成 /api/api
+    # 必须保持 /。REST 前缀用 kiftd.api-prefix，不要改 context-path
     context-path: /
     encoding:
       charset: UTF-8
@@ -10,12 +10,10 @@ server:
       force-response: false
 
 spring:
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: kiftd-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
+    url: jdbc:postgresql://mynet-postgres:5432/postgres
     username: postgres
     password: 123456
     driver-class-name: org.postgresql.Driver
@@ -40,7 +38,7 @@ spring:
       request-timeout: 3600000
 
 kiftd:
-  # REST 前缀（不含尾斜杠）。改成 /api：这里改为 /api，前端 VITE_API_PREFIX=/api。WebDAV 仍是 /webdav。
+  # REST 前缀（不含尾斜杠）。改成 /api：这里改为 /api，前端 VITE_API_PREFIX=/api。
   api-prefix: ${KIFTD_API_PREFIX:/api}
   embedded-pg: false
   jwt:
@@ -54,7 +52,7 @@ kiftd:
   ffmpeg:
     path: ffmpeg
   cors:
-    # * 表示任意来源。限定时写成 http://localhost:5173,https://example.com
+    # * 表示任意来源均可跨域
     allowed-origins: "*"
   admin:
     username: root
@@ -65,7 +63,7 @@ kiftd:
     path: /webdav/*
   http-logging:
     enabled: true
-    multi-line: true
+    multi-line: false
     exclude-paths:
       - ${kiftd.api-prefix:/api}/preview/resource/**
       - ${kiftd.api-prefix:/api}/system/ping

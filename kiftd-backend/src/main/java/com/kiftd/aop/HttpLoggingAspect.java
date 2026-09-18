@@ -42,7 +42,7 @@ import java.util.Map;
 @EnableConfigurationProperties(HttpLoggingProperties.class)
 public class HttpLoggingAspect {
 
-    private static final Logger log = LoggerFactory.getLogger(HttpLoggingAspect.class);
+    private static final Logger log = LoggerFactory.getLogger("HttpLoggingAspect");
     private static final long KB = 1024L;
     private static final long MB = 1024L * 1024L;
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();

@@ -18,10 +18,9 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ePub from 'epubjs'
-import { useAuthStore } from '@/stores/auth'
+import { fetchPreviewResource } from '@/api/files'
 
 const route = useRoute()
-const auth = useAuthStore()
 const fileId = route.params.fileId as string
 const viewerRef = ref<HTMLElement | null>(null)
 const fileName = ref((route.query.name as string) || '')
@@ -45,18 +44,11 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const headers: HeadersInit = {}
-    if (auth.token) {
-      headers.Authorization = `Bearer ${auth.token}`
-    }
-    const res = await fetch(`/api/preview/resource/${fileId}`, { headers })
-    if (!res.ok) {
-      throw new Error('无法加载 EPUB 文件')
-    }
+    const buf = await fetchPreviewResource(fileId)
     if (!fileName.value) {
       fileName.value = 'book.epub'
     }
-    const blob = await res.blob()
+    const blob = new Blob([buf])
     objectUrl = URL.createObjectURL(blob)
     book = ePub(objectUrl)
     await book.ready

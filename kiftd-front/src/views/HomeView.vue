@@ -189,7 +189,7 @@
                 <el-icon><ArrowLeft /></el-icon>
               </el-button>
               <div class="img-stage">
-                <img v-if="currentPicture" :src="pictureSrc(currentPicture)" :alt="currentPicture.fileName" />
+                <img v-if="currentPicture" :src="mediaSrc(currentPicture)" :alt="currentPicture.fileName" />
               </div>
               <el-button class="img-nav next" circle :disabled="imgIndex >= pictures.length - 1" @click="imgIndex++">
                 <el-icon><ArrowRight /></el-icon>
@@ -225,7 +225,7 @@
                 v-if="currentAudio"
                 :key="currentAudio.fileId"
                 ref="audioRef"
-                :src="audioSrc(currentAudio)"
+                :src="mediaSrc(currentAudio)"
                 controls
                 preload="metadata"
               />
@@ -278,7 +278,7 @@ import {
   createFolder,
   deleteFile,
   deleteFolder,
-  downloadUrl,
+  downloadFile,
   getAudios,
   getFolderView,
   getNotice,
@@ -296,6 +296,7 @@ import {
   type FolderView,
 } from '@/api/files'
 import { changePassword } from '@/api/auth'
+import { chainShareUrl, downloadKeyShareUrl, mediaSrc } from '@/api/urls'
 import { useAuthStore } from '@/stores/auth'
 import { bindVideoVolume } from '@/utils/mediaVolume'
 import {
@@ -341,15 +342,8 @@ const pictures = ref<{ fileId: string; fileName: string; url: string }[]>([])
 
 const currentPicture = computed(() => pictures.value[imgIndex.value] || null)
 const pictureSiblings = computed<SiblingItem[]>(() =>
-  pictures.value.map((p) => ({ fileId: p.fileId, fileName: p.fileName, thumb: pictureSrc(p) })),
+  pictures.value.map((p) => ({ fileId: p.fileId, fileName: p.fileName, thumb: mediaSrc(p) })),
 )
-
-function pictureSrc(p: { fileId: string; url: string }) {
-  const u = p.url || ''
-  if (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:')) return u
-  if (u.startsWith('/')) return u
-  return `/api/preview/resource/${p.fileId}`
-}
 
 function onSelectPicture(item: SiblingItem) {
   const i = pictures.value.findIndex((p) => p.fileId === item.fileId)
@@ -370,13 +364,6 @@ const currentAudio = computed(() => audios.value[audioIndex.value] || null)
 const audioSiblings = computed<SiblingItem[]>(() =>
   audios.value.map((a) => ({ fileId: a.fileId, fileName: a.fileName })),
 )
-
-function audioSrc(a: { fileId: string; url: string }) {
-  const u = a.url || ''
-  if (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:')) return u
-  if (u.startsWith('/')) return u
-  return `/api/preview/resource/${a.fileId}`
-}
 
 function onSelectAudio(item: SiblingItem) {
   const i = audios.value.findIndex((a) => a.fileId === item.fileId)
@@ -627,18 +614,7 @@ async function doUploadFolder(opt: UploadRequestOptions) {
 }
 
 function download(fileId: string) {
-  const a = document.createElement('a')
-  a.href = downloadUrl(fileId)
-  a.setAttribute('download', '')
-  // need auth header - use fetch blob
-  fetch(downloadUrl(fileId), { headers: { Authorization: `Bearer ${auth.token}` } })
-    .then((r) => r.blob())
-    .then((blob) => {
-      const url = URL.createObjectURL(blob)
-      a.href = url
-      a.click()
-      URL.revokeObjectURL(url)
-    })
+  downloadFile(fileId)
 }
 
 async function renameRow(row: Row) {
@@ -861,13 +837,13 @@ async function preview(row: Row) {
 
 async function shareChain(row: Row) {
   const key = await createChain(row.id)
-  linkText.value = `${location.origin}/api/links/chain/${key}`
+  linkText.value = chainShareUrl(key)
   linkVisible.value = true
 }
 
 async function shareKey(row: Row) {
   const key = await createDownloadKey(row.id)
-  linkText.value = `${location.origin}/api/links/download/${key}`
+  linkText.value = downloadKeyShareUrl(key)
   linkVisible.value = true
 }
 

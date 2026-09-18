@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/system")
+@RequestMapping("${kiftd.api-prefix:/api}/system")
 public class SystemController {
 
     private final SystemService systemService;

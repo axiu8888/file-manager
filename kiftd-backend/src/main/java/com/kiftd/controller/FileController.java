@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/files")
+@RequestMapping("${kiftd.api-prefix:/api}/files")
 public class FileController {
 
     private final FileService fileService;

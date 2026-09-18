@@ -1,6 +1,7 @@
 package com.kiftd.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 @ConfigurationProperties(prefix = "kiftd")
 public record KiftdProperties(
@@ -12,7 +13,8 @@ public record KiftdProperties(
         Cors cors,
         Admin admin,
         int selectStep,
-        Webdav webdav
+        Webdav webdav,
+        @DefaultValue("/api") String apiPrefix
 ) {
     public record Jwt(String secret, long expireHours) {}
     public record Storage(String root, String temp) {}
@@ -21,4 +23,26 @@ public record KiftdProperties(
     public record Cors(String allowedOrigins) {}
     public record Admin(String username, String password) {}
     public record Webdav(boolean enabled, String path) {}
+
+    public String normalizedApiPrefix() {
+        String raw = apiPrefix == null ? "/api" : apiPrefix.trim();
+        if (raw.isEmpty() || "/".equals(raw)) {
+            return "";
+        }
+        if (!raw.startsWith("/")) {
+            raw = "/" + raw;
+        }
+        while (raw.length() > 1 && raw.endsWith("/")) {
+            raw = raw.substring(0, raw.length() - 1);
+        }
+        return raw;
+    }
+
+    public String apiPath(String suffix) {
+        String path = suffix == null ? "" : suffix;
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        return normalizedApiPrefix() + path;
+    }
 }
