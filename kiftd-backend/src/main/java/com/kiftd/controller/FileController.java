@@ -1,5 +1,6 @@
 package com.kiftd.controller;
 
+import com.kiftd.aop.HttpLoggingIgnore;
 import com.kiftd.common.ApiResponse;
 import com.kiftd.dto.FileDtos;
 import com.kiftd.entity.FileNode;
@@ -44,6 +45,13 @@ public class FileController {
     public ApiResponse<Void> rename(@PathVariable String fileId, @RequestBody FileDtos.RenameFileRequest req) {
         fileService.rename(fileId, req.newName());
         return ApiResponse.ok();
+    }
+
+    @PutMapping("/{fileId}/content")
+    public ApiResponse<FileNode> saveText(
+            @PathVariable String fileId,
+            @HttpLoggingIgnore @RequestBody FileDtos.SaveTextRequest req) throws IOException {
+        return ApiResponse.ok(fileService.saveTextContent(fileId, req == null ? "" : req.content()));
     }
 
     @DeleteMapping("/{fileId}")

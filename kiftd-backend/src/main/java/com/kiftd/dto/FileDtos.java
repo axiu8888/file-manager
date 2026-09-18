@@ -24,4 +24,5 @@ public final class FileDtos {
     public record ExcelPreview(String fileName, List<ExcelSheet> sheets) {}
     public record PptSlide(int index, String title) {}
     public record PptPreview(String fileName, List<PptSlide> slides) {}
+    public record SaveTextRequest(String content) {}
 }

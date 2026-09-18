@@ -98,6 +98,11 @@ export async function renameFile(fileId: string, newName: string) {
   await http.put(`/files/${fileId}`, { fileId, newName })
 }
 
+export async function saveTextContent(fileId: string, content: string) {
+  const { data } = await http.put<ApiResponse<FileNode>>(`/files/${fileId}/content`, { content })
+  return data.data
+}
+
 export async function deleteFile(fileId: string) {
   await http.delete(`/files/${fileId}`)
 }

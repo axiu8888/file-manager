@@ -50,9 +50,9 @@ kiftd:
     secret: ${KIFTD_JWT_SECRET:change-me}
     expire-hours: ${KIFTD_JWT_EXPIRE_HOURS:72}
   storage:
-    # 容器内路径，对应宿主机 /opt/apps/kiftd/data 卷
-    root: ${KIFTD_STORAGE_ROOT:/opt/apps/kiftd/data/filenodes}
-    temp: ${KIFTD_STORAGE_TEMP:/opt/apps/kiftd/data/temp}
+    # 容器内路径 /opt/app，对应宿主机 /opt/apps/kiftd
+    root: ${KIFTD_STORAGE_ROOT:/opt/app/data/filenodes}
+    temp: ${KIFTD_STORAGE_TEMP:/opt/app/data/temp}
   signup:
     enabled: "${KIFTD_SIGNUP_ENABLED:true}"
   ffmpeg:
@@ -72,4 +72,4 @@ logging:
   level:
     com.kiftd: INFO
   file:
-    name: ${KIFTD_LOG_FILE:/opt/apps/kiftd/logs/kiftd.log}
+    name: ${KIFTD_LOG_FILE:/opt/app/logs/kiftd.log}

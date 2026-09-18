@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -44,6 +45,7 @@ public class FileService {
     private final FolderService folderService;
     private final StorageService storageService;
     private final Map<String, String> uploadKeys = new ConcurrentHashMap<>();
+    private static final int TEXT_MAX_BYTES = 5 * 1024 * 1024;
 
     public FileService(FileNodeRepository fileNodeRepository, FolderRepository folderRepository,
                        FolderService folderService, StorageService storageService) {
@@ -106,6 +108,35 @@ public class FileService {
         node.setFileCreator(SecurityUtils.currentUsername());
         node.setFilePath(storageService.saveNewBlock(file.getInputStream()));
         return fileNodeRepository.save(node);
+    }
+
+    @Transactional
+    public FileNode saveTextContent(String fileId, String content) throws IOException {
+        SecurityUtils.requireAuth(AccountAuth.UPLOAD_FILES);
+        FileNode node = requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
+        if (!PreviewService.isText(node.getFileName())) {
+            throw new BizException("该文件类型不支持在线编辑");
+        }
+        String text = content == null ? "" : content;
+        if (text.indexOf('\0') >= 0) {
+            throw new BizException("内容包含二进制数据，无法保存为文本");
+        }
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > TEXT_MAX_BYTES) {
+            throw new BizException("文件过大（超过 5MB），无法在线保存");
+        }
+        String oldPath = node.getFilePath();
+        String newPath = storageService.saveNewBlock(new ByteArrayInputStream(bytes));
+        node.setFilePath(newPath);
+        node.setFileSize(String.valueOf(bytes.length));
+        node.setFileCreationDate(IdUtil.now());
+        node.setFileCreator(SecurityUtils.currentUsername());
+        FileNode saved = fileNodeRepository.save(node);
+        if (oldPath != null && !oldPath.equals(newPath)) {
+            storageService.deleteBlock(oldPath);
+        }
+        return saved;
     }
 
     @Transactional

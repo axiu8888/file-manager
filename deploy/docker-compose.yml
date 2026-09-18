@@ -1,5 +1,5 @@
 # kiftd 单机 Docker Compose：postgres + app(jar) + nginx
-# 推荐部署根目录：/opt/apps/kiftd
+# 宿主机根目录：/opt/apps/kiftd  →  应用容器：/opt/app
 # 用法见 deploy/README.md
 
 name: kiftd
@@ -37,13 +37,13 @@ services:
     environment:
       SERVER_PORT: ${SERVER_PORT:-8080}
       SPRING_PROFILES_ACTIVE: prod
-      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/opt/apps/kiftd/config/
+      SPRING_CONFIG_ADDITIONAL_LOCATION: optional:file:/opt/app/config/
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kiftd}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-kiftd}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-kiftd}
       KIFTD_EMBEDDED_PG: "false"
-      KIFTD_STORAGE_ROOT: /opt/apps/kiftd/data/filenodes
-      KIFTD_STORAGE_TEMP: /opt/apps/kiftd/data/temp
+      KIFTD_STORAGE_ROOT: /opt/app/data/filenodes
+      KIFTD_STORAGE_TEMP: /opt/app/data/temp
       KIFTD_JWT_SECRET: ${KIFTD_JWT_SECRET:-change-me}
       KIFTD_JWT_EXPIRE_HOURS: ${KIFTD_JWT_EXPIRE_HOURS:-72}
       # 同域 nginx 反代：可留空
@@ -52,12 +52,13 @@ services:
       KIFTD_ADMIN_PASSWORD: ${KIFTD_ADMIN_PASSWORD:-change-me}
       KIFTD_SIGNUP_ENABLED: ${KIFTD_SIGNUP_ENABLED:-true}
       KIFTD_FFMPEG_PATH: ffmpeg
-      KIFTD_LOG_FILE: /opt/apps/kiftd/logs/kiftd.log
+      KIFTD_LOG_FILE: /opt/app/logs/kiftd.log
       JAVA_OPTS: ${JAVA_OPTS:--Xms256m -Xmx1024m}
     volumes:
-      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/data:/opt/apps/kiftd/data
-      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/logs:/opt/apps/kiftd/logs
-      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/config:/opt/apps/kiftd/config:ro
+      # 宿主机 /opt/apps/kiftd  ↔  容器 /opt/app
+      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/data:/opt/app/data
+      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/logs:/opt/app/logs
+      - ${KIFTD_HOST_ROOT:-/opt/apps/kiftd}/config:/opt/app/config:ro
     # 仅内网暴露；对外由 nginx:80 提供
     expose:
       - "8080"

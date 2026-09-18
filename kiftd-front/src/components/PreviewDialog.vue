@@ -2,14 +2,14 @@
   <AppWindow
     :model-value="modelValue"
     :fullscreen-target="fullscreenTarget"
-    @update:model-value="emit('update:modelValue', $event)"
+    @update:model-value="onWindowVisible"
     @opened="onOpened"
     @closed="onClosed"
     @resized="onWindowResized"
   >
     <template #title>
       <div class="preview-title-wrap">
-        <div class="preview-title">{{ displayTitle }}</div>
+        <div class="preview-title">{{ displayTitle }}{{ textDirty ? ' *' : '' }}</div>
         <div v-if="bookTitle && bookTitle !== displayTitle" class="preview-sub">{{ bookTitle }}</div>
       </div>
     </template>
@@ -171,39 +171,74 @@
         </div>
 
         <div v-if="!loading && !error && type === 'text'" class="preview-text">
-          <iframe
-            v-if="textMode === 'html'"
-            class="text-html-frame"
-            sandbox=""
-            :srcdoc="textContent"
-            title="html-preview"
-          />
+          <div v-if="showTextToolbar" class="md-toolbar">
+            <el-button-group v-if="textMode === 'markdown' || (textMode === 'html' && textEditing)">
+              <el-button size="small" :type="paneLayout === 'source' ? 'primary' : 'default'" @click="paneLayout = 'source'">
+                源码
+              </el-button>
+              <el-button size="small" :type="paneLayout === 'split' ? 'primary' : 'default'" @click="paneLayout = 'split'">
+                并排
+              </el-button>
+              <el-button size="small" :type="paneLayout === 'preview' ? 'primary' : 'default'" @click="paneLayout = 'preview'">
+                预览
+              </el-button>
+            </el-button-group>
+            <div v-if="canEditText" class="text-edit-actions">
+              <template v-if="textEditing">
+                <span class="text-edit-status">{{ textDirty ? '未保存' : '已保存' }}</span>
+                <el-button size="small" :disabled="textSaving" @click="cancelEdit">退出编辑</el-button>
+                <el-button
+                  size="small"
+                  type="primary"
+                  title="Ctrl+S"
+                  :disabled="!textDirty || textSaving"
+                  :loading="textSaving"
+                  @click="saveText"
+                >
+                  保存
+                </el-button>
+              </template>
+              <el-button v-else size="small" type="primary" @click="startEdit">编辑</el-button>
+            </div>
+          </div>
+
+          <template v-if="textMode === 'html'">
+            <div v-if="textEditing" class="md-panes" :class="`layout-${paneLayout}`">
+              <div v-show="paneLayout !== 'preview'" class="md-source">
+                <textarea v-model="textContent" class="text-editor" spellcheck="false" />
+              </div>
+              <div v-show="paneLayout === 'split'" class="md-split-line" aria-hidden="true" />
+              <iframe
+                v-show="paneLayout !== 'source'"
+                class="text-html-frame"
+                sandbox=""
+                :srcdoc="textContent"
+                title="html-preview"
+              />
+            </div>
+            <iframe
+              v-else
+              class="text-html-frame"
+              sandbox=""
+              :srcdoc="textContent"
+              title="html-preview"
+            />
+          </template>
 
           <template v-else-if="textMode === 'markdown'">
-            <div class="md-toolbar">
-              <el-button-group>
-                <el-button size="small" :type="mdLayout === 'source' ? 'primary' : 'default'" @click="mdLayout = 'source'">
-                  源码
-                </el-button>
-                <el-button size="small" :type="mdLayout === 'split' ? 'primary' : 'default'" @click="mdLayout = 'split'">
-                  并排
-                </el-button>
-                <el-button size="small" :type="mdLayout === 'preview' ? 'primary' : 'default'" @click="mdLayout = 'preview'">
-                  预览
-                </el-button>
-              </el-button-group>
-            </div>
-            <div class="md-panes" :class="`layout-${mdLayout}`">
-              <div v-show="mdLayout !== 'preview'" class="md-source">
-                <pre class="text-pre md-source-pre"><code>{{ textContent }}</code></pre>
+            <div class="md-panes" :class="`layout-${paneLayout}`">
+              <div v-show="paneLayout !== 'preview'" class="md-source">
+                <textarea v-if="textEditing" v-model="textContent" class="text-editor" spellcheck="false" />
+                <pre v-else class="text-pre md-source-pre"><code>{{ textContent }}</code></pre>
               </div>
-              <div v-show="mdLayout === 'split'" class="md-split-line" aria-hidden="true" />
-              <div v-show="mdLayout !== 'source'" class="md-preview">
+              <div v-show="paneLayout === 'split'" class="md-split-line" aria-hidden="true" />
+              <div v-show="paneLayout !== 'source'" class="md-preview">
                 <div class="text-md" v-html="renderedMarkdown" />
               </div>
             </div>
           </template>
 
+          <textarea v-else-if="textEditing" v-model="textContent" class="text-editor" spellcheck="false" />
           <pre v-else class="text-pre"><code>{{ textContent }}</code></pre>
         </div>
           </div>
@@ -228,11 +263,12 @@ import ePub from 'epubjs'
 import * as pdfjs from 'pdfjs-dist'
 import { PDFDocument } from 'pdf-lib'
 import { marked } from 'marked'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import AppWindow from '@/components/AppWindow.vue'
 import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
-import { getSiblings, getExcel, getPpt } from '@/api/files'
+import { getSiblings, getExcel, getPpt, saveTextContent } from '@/api/files'
 
 // Vite: use bundled worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -271,8 +307,11 @@ const currentFileId = ref('')
 const playingName = ref('')
 const epubViewerRef = ref<HTMLElement | null>(null)
 const textContent = ref('')
+const textSaved = ref('')
+const textSaving = ref(false)
+const textEditing = ref(false)
 const textMode = ref<'plain' | 'markdown' | 'html'>('plain')
-const mdLayout = ref<'source' | 'preview' | 'split'>('split')
+const paneLayout = ref<'source' | 'preview' | 'split'>('split')
 const excelSheets = ref<{ name: string; rows: string[][]; truncated: boolean }[]>([])
 const excelSheetIndex = ref(0)
 const pptSlides = ref<{ index: number; title: string }[]>([])
@@ -285,6 +324,9 @@ const excelColCount = computed(() => currentExcelSheet.value?.rows[0]?.length ||
 const currentPptSlide = computed(() => pptSlides.value[pptIndex.value] || null)
 
 const TEXT_MAX_BYTES = 5 * 1024 * 1024
+const canEditText = computed(() => props.type === 'text' && auth.isLogin && auth.hasAuth('UPLOAD_FILES'))
+const textDirty = computed(() => textEditing.value && textContent.value !== textSaved.value)
+const showTextToolbar = computed(() => textMode.value === 'markdown' || canEditText.value)
 
 const renderedMarkdown = computed(() => {
   try {
@@ -501,8 +543,11 @@ function resetViewer() {
   pdfDoc = null
   pdfBlobBase = ''
   textContent.value = ''
+  textSaved.value = ''
+  textSaving.value = false
+  textEditing.value = false
   textMode.value = 'plain'
-  mdLayout.value = 'split'
+  paneLayout.value = 'split'
   excelSheets.value = []
   excelSheetIndex.value = 0
   pptSlides.value = []
@@ -526,6 +571,28 @@ function cleanup() {
 
 function onClosed() {
   cleanup()
+}
+
+async function onWindowVisible(open: boolean) {
+  if (!open) {
+    const ok = await confirmDiscardIfDirty()
+    if (!ok) return
+  }
+  emit('update:modelValue', open)
+}
+
+async function confirmDiscardIfDirty() {
+  if (!textDirty.value) return true
+  try {
+    await ElMessageBox.confirm('内容尚未保存，确定放弃修改？', '未保存', {
+      type: 'warning',
+      confirmButtonText: '放弃',
+      cancelButtonText: '继续编辑',
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function onOpened() {
@@ -736,8 +803,11 @@ async function loadPdf() {
 
   const title = displayTitle.value.endsWith('.pdf') ? displayTitle.value : `${displayTitle.value}`
   const fixed = await pdfBytesWithTitle(buf, title)
+  // 拷到独立 ArrayBuffer，避免 Uint8Array<ArrayBufferLike> 与 BlobPart 不兼容
+  const pdfBytes = new Uint8Array(fixed.byteLength)
+  pdfBytes.set(fixed)
   // 使用带文件名的 File，部分浏览器会用其作为显示名
-  const file = new File([fixed], title.endsWith('.pdf') ? title : `${title}.pdf`, {
+  const file = new File([pdfBytes], title.endsWith('.pdf') ? title : `${title}.pdf`, {
     type: 'application/pdf',
   })
   objectUrl = URL.createObjectURL(file)
@@ -802,6 +872,7 @@ async function loadCurrentContent(seq: number) {
 
 async function openSibling(item: SiblingItem) {
   if (!item?.fileId || item.fileId === currentFileId.value) return
+  if (!(await confirmDiscardIfDirty())) return
   const seq = ++loadSeq
   resetViewer()
   currentFileId.value = item.fileId
@@ -986,6 +1057,13 @@ function epubNext() {
   turnEpub(1)
 }
 function onKey(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    if (props.type === 'text' && textEditing.value && canEditText.value) {
+      e.preventDefault()
+      void saveText()
+    }
+    return
+  }
   const tag = (e.target as HTMLElement | null)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (props.type === 'ppt') {
@@ -1023,12 +1101,54 @@ function onKey(e: KeyboardEvent) {
 async function loadText() {
   const res = await authFetch(`/api/preview/resource/${activeId()}`)
   const buf = await res.arrayBuffer()
-  if (!buf.byteLength) throw new Error('文件内容为空')
   if (buf.byteLength > TEXT_MAX_BYTES) {
     throw new Error('文件过大（超过 5MB），请下载后查看')
   }
   textMode.value = detectTextMode(playingName.value || props.title || '')
-  textContent.value = decodeTextBytes(buf)
+  paneLayout.value = 'split'
+  textEditing.value = false
+  textContent.value = buf.byteLength ? decodeTextBytes(buf) : ''
+  textSaved.value = textContent.value
+}
+
+function startEdit() {
+  if (!canEditText.value) return
+  textEditing.value = true
+  if (textMode.value === 'html' || textMode.value === 'markdown') {
+    paneLayout.value = 'split'
+  }
+  nextTick(() => {
+    const el = document.querySelector('.preview-text .text-editor') as HTMLTextAreaElement | null
+    el?.focus()
+  })
+}
+
+async function cancelEdit() {
+  if (!(await confirmDiscardIfDirty())) return
+  textContent.value = textSaved.value
+  textEditing.value = false
+  if (textMode.value === 'markdown' || textMode.value === 'html') {
+    paneLayout.value = 'split'
+  }
+}
+
+async function saveText() {
+  if (!canEditText.value || !textEditing.value || textSaving.value || !textDirty.value) return
+  const bytes = new TextEncoder().encode(textContent.value)
+  if (bytes.length > TEXT_MAX_BYTES) {
+    ElMessage.error('文件过大（超过 5MB），无法在线保存')
+    return
+  }
+  textSaving.value = true
+  try {
+    await saveTextContent(activeId(), textContent.value)
+    textSaved.value = textContent.value
+    ElMessage.success('已保存')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '保存失败')
+  } finally {
+    textSaving.value = false
+  }
 }
 
 function excelColLabel(index: number) {
@@ -1541,6 +1661,16 @@ async function load() {
   border-bottom: 1px solid #e5e7eb;
   background: #f8fafc;
 }
+.text-edit-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.text-edit-status {
+  font-size: 12px;
+  color: #64748b;
+}
 .md-panes {
   flex: 1;
   min-height: 0;
@@ -1548,11 +1678,13 @@ async function load() {
   overflow: hidden;
 }
 .md-panes.layout-source .md-source,
-.md-panes.layout-preview .md-preview {
+.md-panes.layout-preview .md-preview,
+.md-panes.layout-preview .text-html-frame {
   flex: 1;
 }
 .md-panes.layout-split .md-source,
-.md-panes.layout-split .md-preview {
+.md-panes.layout-split .md-preview,
+.md-panes.layout-split .text-html-frame {
   flex: 1;
   min-width: 0;
   width: 50%;
@@ -1592,6 +1724,24 @@ async function load() {
 }
 .text-pre code {
   font-family: inherit;
+}
+.text-editor {
+  margin: 0;
+  padding: 14px 16px;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #1f2937;
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .text-html-frame {
   flex: 1;

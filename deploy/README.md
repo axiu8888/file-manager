@@ -12,7 +12,23 @@
                    ├─ /api/      → app:8080
                    └─ /webdav/   → app:8080
 app → postgres:5432
-数据卷 → /opt/apps/kiftd/data
+数据卷 → 宿主机 /opt/apps/kiftd  ⇄  应用容器 /opt/app
+```
+
+| 位置 | 路径 |
+|------|------|
+| 宿主机 | `/opt/apps/kiftd`（compose、jar、前端、data、logs、config） |
+| 应用容器 `kiftd-app` | `/opt/app`（jar、config、data、logs） |
+| Postgres 容器 | `/var/lib/postgresql/data` ← 宿主机 `data/postgres` |
+| Nginx 容器 | 镜像内 `/usr/share/nginx/html`，不挂业务数据 |
+
+卷映射：
+
+```
+/opt/apps/kiftd/data   →  kiftd-app:/opt/app/data
+/opt/apps/kiftd/logs   →  kiftd-app:/opt/app/logs
+/opt/apps/kiftd/config →  kiftd-app:/opt/app/config
+/opt/apps/kiftd/data/postgres →  kiftd-postgres:/var/lib/postgresql/data
 ```
 
 ## 目录布局
@@ -103,7 +119,7 @@ SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/kiftd
 SPRING_DATASOURCE_USERNAME=kiftd
 SPRING_DATASOURCE_PASSWORD=...
 KIFTD_EMBEDDED_PG=false
-KIFTD_STORAGE_ROOT=/opt/apps/kiftd/data/filenodes
+KIFTD_STORAGE_ROOT=/opt/app/data/filenodes
 KIFTD_JWT_SECRET=...
 SERVER_PORT=8080
 ```
@@ -158,7 +174,7 @@ sudo ./deploy/scripts/install.sh
 
 ## 配置说明
 
-- 生产配置：`deploy/application-prod.yml`（禁用嵌入式 PG，存储路径指向容器内 `/opt/apps/kiftd/data/...`）
+- 生产配置：`deploy/application-prod.yml`（禁用嵌入式 PG，存储路径指向容器内 `/opt/app/data/...`）
 - CORS：经 nginx 同域访问时保持 `KIFTD_CORS_ALLOWED_ORIGINS` 为空即可
 - `client_max_body_size` 已设为不限制；已转发 `Range` / `Accept-Ranges` 以支持视频拖拽
 - 前端 Vite `base` 保持 `/`，由 nginx 托管 `dist` 并做 SPA `try_files` 回退
@@ -176,3 +192,6 @@ sudo ./deploy/scripts/install.sh
 
 4. **健康检查失败**  
    app 镜像会请求 `/api/system/ping`；确认该接口可匿名访问。
+
+5. **宿主机 80 端口已被占用**  
+   改 `.env` 里的 `HTTP_PORT`（例如 `8080` 或 `18080`），然后访问 `http://<主机>:<HTTP_PORT>/`。应用容器内部仍是 8080，只改对外映射。
