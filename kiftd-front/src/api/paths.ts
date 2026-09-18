@@ -54,5 +54,6 @@ export const paths = {
     txtPdf: (id: string) => `/preview/txt-pdf/${id}`,
     officePdf: (id: string) => `/preview/office-pdf/${id}`,
     pptSlide: (id: string, index: number) => `/preview/ppt-slide/${id}/${index}`,
+    thumb: (id: string) => `/preview/thumb/${id}`,
   },
 } as const

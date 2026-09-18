@@ -10,6 +10,10 @@ export function previewResourceUrl(fileId: string, token?: string | null) {
   return withToken(paths.preview.resource(fileId), token)
 }
 
+export function previewThumbUrl(fileId: string, token?: string | null) {
+  return withToken(paths.preview.thumb(fileId), token)
+}
+
 export function pdfPreviewUrl(fileId: string, kind: string = 'pdf') {
   if (kind === 'txt') return apiUrl(paths.preview.txtPdf(fileId))
   if (kind === 'office') return apiUrl(paths.preview.officePdf(fileId))

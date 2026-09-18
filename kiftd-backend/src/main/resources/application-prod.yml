@@ -13,6 +13,12 @@
 
 server:
   port: ${SERVER_PORT:8080}
+  tomcat:
+    max-http-form-post-size: -1
+    max-swallow-size: -1
+    max-part-header-size: 16KB
+    max-part-count: 100
+    connection-timeout: 3600000
 
 spring:
   datasource:
@@ -20,6 +26,11 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:kiftd}
     password: ${SPRING_DATASOURCE_PASSWORD:kiftd}
     driver-class-name: org.postgresql.Driver
+  servlet:
+    multipart:
+      max-file-size: 20GB
+      max-request-size: 20GB
+      file-size-threshold: 10MB
 
 kiftd:
   embedded-pg: false

@@ -8,6 +8,14 @@ server:
       enabled: true
       force-request: true
       force-response: false
+  tomcat:
+    # 默认约 2MB，大文件上传会 MaxUploadSizeExceededException
+    max-http-form-post-size: -1
+    max-swallow-size: -1
+    # Tomcat 10.1.42+ 默认 multipart 单 part 头仅 512B；超长中文文件名会触发 Header section has more than 512 bytes
+    max-part-header-size: 16KB
+    max-part-count: 100
+    connection-timeout: 3600000
 
 spring:
   profiles:
@@ -32,8 +40,10 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      max-file-size: -1
-      max-request-size: -1
+      # 单文件 / 整次请求上限（显式 20GB，避免 -1 在部分环境下未生效）
+      max-file-size: 20GB
+      max-request-size: 20GB
+      file-size-threshold: 10MB
   mvc:
     async:
       # 视频/大文件流式传输可能超过默认 30s

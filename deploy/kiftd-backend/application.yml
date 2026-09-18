@@ -8,8 +8,17 @@ server:
       enabled: true
       force-request: true
       force-response: false
+  tomcat:
+    max-http-form-post-size: -1
+    max-swallow-size: -1
+    # 超长文件名需要大于默认 512B
+    max-part-header-size: 16KB
+    max-part-count: 100
+    connection-timeout: 3600000
 
 spring:
+  # profiles:
+  #   active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: kiftd-backend
   datasource:
@@ -30,8 +39,9 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      max-file-size: -1
-      max-request-size: -1
+      max-file-size: 20GB
+      max-request-size: 20GB
+      file-size-threshold: 10MB
   mvc:
     async:
       # 视频/大文件流式传输可能超过默认 30s

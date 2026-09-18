@@ -55,8 +55,40 @@ http.interceptors.response.use(
       auth.logout()
       router.push({ name: 'login' })
     }
-    return Promise.reject(err)
+    return Promise.reject(normalizeHttpError(err))
   },
 )
+
+/** 把 axios 的 Network Error / 413 等转成可读中文 */
+export function normalizeHttpError(err: unknown): Error {
+  const e = err as {
+    message?: string
+    code?: string
+    response?: { status?: number; data?: unknown }
+    config?: { url?: string }
+  }
+  const data = e.response?.data
+  if (data && typeof data === 'object' && data !== null && 'message' in data) {
+    const msg = String((data as { message?: unknown }).message || '').trim()
+    if (msg) return new Error(msg)
+  }
+  const status = e.response?.status
+  if (status === 413) {
+    return new Error('上传文件过大，已超过服务器或网关限制')
+  }
+  if (status === 502 || status === 504) {
+    return new Error('网关超时或不可用，请稍后重试')
+  }
+  const msg = e.message || ''
+  if (!e.response && (msg === 'Network Error' || e.code === 'ERR_NETWORK')) {
+    const url = e.config?.url || ''
+    if (url.includes('/upload') || url.includes('/files')) {
+      return new Error('上传中断（网络断开或文件过大被拒绝）。若文件很大，请确认服务端已提高上传限制并已重启。')
+    }
+    return new Error('网络异常，请检查网络后重试')
+  }
+  if (err instanceof Error) return err
+  return new Error(msg || '请求失败')
+}
 
 export default http

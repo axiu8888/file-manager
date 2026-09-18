@@ -74,6 +74,16 @@ public class PreviewController {
     }
 
     @HttpLoggingIgnore
+    @GetMapping("/thumb/{fileId}")
+    public ResponseEntity<byte[]> thumb(@PathVariable String fileId) {
+        byte[] jpeg = previewService.thumbnailJpeg(fileId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400")
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(jpeg);
+    }
+
+    @HttpLoggingIgnore
     @GetMapping("/ppt-slide/{fileId}/{index}")
     public ResponseEntity<byte[]> pptSlide(@PathVariable String fileId, @PathVariable int index) {
         byte[] png = previewService.pptSlidePng(fileId, index);

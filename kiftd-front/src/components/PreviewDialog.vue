@@ -1,11 +1,17 @@
 <template>
   <AppWindow
     :model-value="modelValue"
+    :title="displayTitle"
+    :z-index="zIndex"
+    :activate-key="activateKey"
+    :cascade="cascade"
+    :show-mask="false"
     :fullscreen-target="fullscreenTarget"
     @update:model-value="onWindowVisible"
     @opened="onOpened"
     @closed="onClosed"
     @resized="onWindowResized"
+    @activate="emit('activate')"
   >
     <template #title>
       <div class="preview-title-wrap">
@@ -81,6 +87,20 @@
 
         <div v-if="type === 'video' && !error" class="preview-video-layout">
           <div class="preview-video-stage">
+            <div v-show="!immersive && !loading && videoSrc" class="video-rate-bar">
+              <span class="video-rate-label">倍速</span>
+              <button
+                v-for="r in videoRates"
+                :key="r"
+                type="button"
+                class="video-rate-btn"
+                :class="{ active: playbackRate === r }"
+                :title="`${r}x`"
+                @click="setPlaybackRate(r)"
+              >
+                {{ formatRate(r) }}
+              </button>
+            </div>
             <video
               v-if="!loading && videoSrc"
               :key="`video-${currentFileId}`"
@@ -91,6 +111,7 @@
               playsinline
               preload="metadata"
               controlslist="nodownload"
+              @loadedmetadata="applyPlaybackRate"
             />
           </div>
         </div>
@@ -269,7 +290,7 @@ import AppWindow from '@/components/AppWindow.vue'
 import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
 import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, saveTextContent } from '@/api/files'
-import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl } from '@/api/urls'
+import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl, previewThumbUrl } from '@/api/urls'
 
 // Vite: use bundled worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -290,10 +311,16 @@ const props = defineProps<{
   fileId: string
   type: PreviewType
   kind?: 'pdf' | 'txt' | 'office'
+  zIndex?: number
+  /** 递增可把已打开窗口还原并置顶 */
+  activateKey?: number
+  /** 多窗口错开 */
+  cascade?: number
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [boolean]
+  activate: []
 }>()
 
 const auth = useAuthStore()
@@ -302,6 +329,8 @@ const error = ref('')
 const pdfSrc = ref('')
 const videoSrc = ref('')
 const videoRef = ref<HTMLVideoElement | null>(null)
+const videoRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const
+const playbackRate = ref(1)
 const siblings = ref<SiblingItem[]>([])
 const listOpen = ref(true)
 const currentFileId = ref('')
@@ -824,6 +853,7 @@ async function loadVideo() {
   const id = activeId()
   // 与 PDF iframe 分离，避免隐藏 iframe 同时拉视频并出声
   videoSrc.value = previewResourceUrl(id, auth.token)
+  window.addEventListener('keydown', onKey)
 }
 
 async function loadSiblings() {
@@ -831,7 +861,13 @@ async function loadSiblings() {
   playingName.value = props.title
   try {
     const data = await getSiblings(props.fileId)
-    siblings.value = data.items || []
+    const cat = data.category || ''
+    const withThumb = cat === 'image' || cat === 'video' || cat === 'pdf' || cat === 'ppt'
+    siblings.value = (data.items || []).map((item) => ({
+      fileId: item.fileId,
+      fileName: item.fileName,
+      thumb: withThumb ? previewThumbUrl(item.fileId, auth.token) : undefined,
+    }))
     const current =
       siblings.value.find((v) => v.fileId === props.fileId) || siblings.value[data.index] || siblings.value[0]
     if (current) {
@@ -879,11 +915,61 @@ async function playVideoOnce() {
   const v = videoRef.value
   if (!v || props.type !== 'video') return
   bindVideoVolume(v)
+  applyPlaybackRate()
   try {
     await v.play()
   } catch {
     /* 浏览器可能拦截自动播放，用户可手动点播放 */
   }
+}
+
+function formatRate(r: number) {
+  return r === 1 ? '1x' : `${r}x`
+}
+
+function applyPlaybackRate() {
+  const v = videoRef.value
+  if (!v) return
+  try {
+    v.playbackRate = playbackRate.value
+  } catch {
+    /* ignore */
+  }
+}
+
+function setPlaybackRate(rate: number) {
+  playbackRate.value = rate
+  applyPlaybackRate()
+}
+
+function seekVideoBy(deltaSec: number) {
+  const v = videoRef.value
+  if (!v || props.type !== 'video') return
+  const duration = Number.isFinite(v.duration) ? v.duration : NaN
+  let next = (v.currentTime || 0) + deltaSec
+  if (Number.isFinite(duration) && duration > 0) {
+    next = Math.min(Math.max(0, next), Math.max(0, duration - 0.05))
+  } else {
+    next = Math.max(0, next)
+  }
+  try {
+    v.currentTime = next
+  } catch {
+    /* ignore */
+  }
+}
+
+function changeVideoVolume(delta: number) {
+  const v = videoRef.value
+  if (!v || props.type !== 'video') return
+  if (v.muted && delta > 0) {
+    v.muted = false
+    if (v.volume <= 0) v.volume = Math.min(1, delta)
+    return
+  }
+  const next = Math.min(1, Math.max(0, v.volume + delta))
+  v.volume = next
+  v.muted = next === 0
 }
 
 async function loadEpub(seq: number) {
@@ -1048,6 +1134,28 @@ function onKey(e: KeyboardEvent) {
   }
   const tag = (e.target as HTMLElement | null)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (props.type === 'video') {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      seekVideoBy(e.shiftKey ? -30 : -5)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      seekVideoBy(e.shiftKey ? 30 : 5)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      changeVideoVolume(e.shiftKey ? 0.1 : 0.05)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      changeVideoVolume(e.shiftKey ? -0.1 : -0.05)
+    } else if (e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault()
+      const v = videoRef.value
+      if (!v) return
+      if (v.paused) void v.play().catch(() => undefined)
+      else v.pause()
+    }
+    return
+  }
   if (props.type === 'ppt') {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
       e.preventDefault()
@@ -1302,12 +1410,51 @@ async function load() {
   min-width: 0;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   position: relative;
   background: #000;
 }
 .preview-video-stage .preview-status {
   background: rgba(0, 0, 0, 0.55);
   color: #e5e7eb;
+}
+.video-rate-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.92);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  z-index: 2;
+}
+.video-rate-label {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-right: 2px;
+  user-select: none;
+}
+.video-rate-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.video-rate-btn:hover {
+  background: rgba(148, 163, 184, 0.18);
+  color: #f8fafc;
+}
+.video-rate-btn.active {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #93c5fd;
+  font-weight: 600;
 }
 .preview-video {
   background: #000;

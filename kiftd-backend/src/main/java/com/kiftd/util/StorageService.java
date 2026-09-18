@@ -17,16 +17,20 @@ public class StorageService {
 
     private final Path root;
     private final Path temp;
+    private final Path thumbs;
 
     public StorageService(KiftdProperties props) {
         this.root = Path.of(props.storage().root()).toAbsolutePath().normalize();
         this.temp = Path.of(props.storage().temp()).toAbsolutePath().normalize();
+        Path parent = root.getParent();
+        this.thumbs = (parent != null ? parent.resolve("thumbs") : root.resolve("thumbs")).toAbsolutePath().normalize();
     }
 
     @PostConstruct
     public void init() throws IOException {
         ensureDirectory(root);
         ensureDirectory(temp);
+        ensureDirectory(thumbs);
     }
 
     /**
@@ -78,6 +82,18 @@ public class StorageService {
 
     public Path tempFile(String suffix) throws IOException {
         return Files.createTempFile(temp, "kiftd-", suffix);
+    }
+
+    public Path resolveThumb(String fileName) {
+        Path p = thumbs.resolve(fileName).normalize();
+        if (!p.startsWith(thumbs)) {
+            throw new IllegalArgumentException("非法缩略图路径");
+        }
+        return p;
+    }
+
+    public Path getThumbsDir() {
+        return thumbs;
     }
 
     public Path getRoot() {

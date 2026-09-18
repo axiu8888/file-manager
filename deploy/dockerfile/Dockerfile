@@ -13,7 +13,7 @@ RUN sed -i 's|http://.*security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/ap
 
 # 适配部分docker不支持的问题
 RUN apt-get update && apt-get upgrade -y && apt-get update -y \
- && apt-get install -y libltdl7 fontconfig libfreetype6 \
+ && apt-get install -y libltdl7 fontconfig libfreetype6 ffmpeg \
  && apt-get install -y cron vim curl wget zip tree net-tools tcpdump iputils-ping \
  && apt-get install -y docker-cli \
  && apt-get clean

@@ -23,6 +23,38 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok(ApiResponse.fail(e.getCode(), e.getMessage()));
     }
 
+    @ExceptionHandler({
+            org.springframework.web.multipart.MaxUploadSizeExceededException.class,
+            org.springframework.web.multipart.MultipartException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleMultipart(Exception e, HttpServletRequest request) {
+        Long max = null;
+        if (e instanceof org.springframework.web.multipart.MaxUploadSizeExceededException maxEx) {
+            max = maxEx.getMaxUploadSize();
+        }
+        log.warn("upload rejected: uri={}, contentLength={}, maxUploadSize={}, msg={}, cause={}",
+                request.getRequestURI(),
+                request.getContentLengthLong(),
+                max,
+                e.getMessage(),
+                e.getCause() == null ? null : e.getCause().toString());
+        String msg = "上传失败";
+        String raw = e.getMessage() == null ? "" : e.getMessage();
+        if (e instanceof org.springframework.web.multipart.MaxUploadSizeExceededException
+                || raw.toLowerCase().contains("size")
+                || raw.toLowerCase().contains("exceed")) {
+            String cause = e.getCause() == null ? "" : e.getCause().toString();
+            if (cause.contains("Header section") || cause.contains("512 bytes")) {
+                msg = "上传失败：文件名过长（multipart 头部超过限制）。请缩短文件名后重试。";
+            } else {
+                msg = "上传失败：请求体超过限制或上传中断。请单文件重试；若文件名很长请先缩短文件名。";
+            }
+        } else if (!raw.isBlank()) {
+            msg = "上传失败: " + raw;
+        }
+        return ResponseEntity.ok(ApiResponse.fail(413, msg));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValid(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getFieldErrors().stream()

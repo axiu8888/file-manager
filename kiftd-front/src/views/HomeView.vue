@@ -131,7 +131,17 @@
         <el-table-column label="名称" min-width="280" header-align="center" sortable :sort-method="sortByName">
           <template #default="{ row }">
             <span class="name-cell" :class="{ 'is-folder': row.kind === 'folder' }" @click="onOpen(row)">
-              <el-icon class="file-icon" :class="fileIconClass(row)">
+              <span v-if="showThumb(row)" class="file-thumb-wrap" :class="fileIconClass(row)">
+                <img
+                  class="file-thumb"
+                  :src="thumbSrc(row)"
+                  :alt="row.name"
+                  loading="lazy"
+                  @error="onThumbError(row.id)"
+                />
+                <span v-if="isVideo(row.name)" class="file-thumb-play" aria-hidden="true" />
+              </span>
+              <el-icon v-else class="file-icon" :class="fileIconClass(row)">
                 <component :is="fileIconName(row)" />
               </el-icon>
               <span class="name-text" :title="row.name">{{ row.name }}</span>
@@ -190,6 +200,8 @@
 
     <AppWindow
       v-model="imgVisible"
+      :title="currentPicture?.fileName || '图片预览'"
+      :show-mask="false"
       @closed="onImgClosed"
     >
       <template #title>
@@ -225,7 +237,8 @@
 
     <AppWindow
       v-model="audioVisible"
-      title="音频播放"
+      :title="currentAudio?.fileName || '音频播放'"
+      :show-mask="false"
       :initial-width="720"
       :initial-height="420"
       @closed="onAudioClosed"
@@ -259,11 +272,18 @@
     </AppWindow>
 
     <PreviewDialog
-      v-model="filePreviewVisible"
-      :title="filePreviewTitle"
-      :file-id="filePreviewId"
-      :type="filePreviewType"
-      :kind="filePreviewKind"
+      v-for="(p, idx) in previewSessions"
+      :key="p.id"
+      :model-value="p.visible"
+      :title="p.title"
+      :file-id="p.fileId"
+      :type="p.type"
+      :kind="p.kind"
+      :z-index="p.zIndex"
+      :activate-key="p.activateKey"
+      :cascade="idx"
+      @update:model-value="(v) => onPreviewVisible(p.id, v)"
+      @activate="raisePreview(p.id)"
     />
 
     <el-dialog v-model="linkVisible" title="分享链接" width="560px">
@@ -310,7 +330,7 @@ import {
   type FolderView,
 } from '@/api/files'
 import { changePassword } from '@/api/auth'
-import { chainShareUrl, downloadKeyShareUrl, mediaSrc } from '@/api/urls'
+import { chainShareUrl, downloadKeyShareUrl, mediaSrc, previewThumbUrl } from '@/api/urls'
 import { useAuthStore } from '@/stores/auth'
 import { bindVideoVolume } from '@/utils/mediaVolume'
 import {
@@ -348,6 +368,8 @@ const selected = ref<Row[]>([])
 const uploadProgress = ref(-1)
 const dragOver = ref(false)
 let dragDepth = 0
+/** 防止拖拽/连点导致并发上传（并发时 Tomcat swallow 易连环报 size exceeded） */
+let uploadBusy = false
 const openChangePwd = ref(false)
 const oldPwd = ref('')
 const newPwd = ref('')
@@ -358,7 +380,11 @@ const pictures = ref<{ fileId: string; fileName: string; url: string }[]>([])
 
 const currentPicture = computed(() => pictures.value[imgIndex.value] || null)
 const pictureSiblings = computed<SiblingItem[]>(() =>
-  pictures.value.map((p) => ({ fileId: p.fileId, fileName: p.fileName, thumb: mediaSrc(p) })),
+  pictures.value.map((p) => ({
+    fileId: p.fileId,
+    fileName: p.fileName,
+    thumb: previewThumbUrl(p.fileId, auth.token),
+  })),
 )
 
 function onSelectPicture(item: SiblingItem) {
@@ -405,11 +431,67 @@ function onAudioClosed() {
 const linkVisible = ref(false)
 const linkText = ref('')
 const clipboard = ref<{ copy: boolean; fileIds: string[]; folderIds: string[] } | null>(null)
-const filePreviewVisible = ref(false)
-const filePreviewTitle = ref('')
-const filePreviewId = ref('')
-const filePreviewType = ref<PreviewType>('pdf')
-const filePreviewKind = ref<'pdf' | 'txt' | 'office'>('pdf')
+
+interface PreviewSession {
+  id: string
+  fileId: string
+  title: string
+  type: PreviewType
+  kind: 'pdf' | 'txt' | 'office'
+  visible: boolean
+  zIndex: number
+  activateKey: number
+}
+
+const previewSessions = ref<PreviewSession[]>([])
+let previewSeq = 0
+let previewZ = 3200
+let previewActivateSeq = 0
+const MAX_PREVIEW_WINDOWS = 8
+
+function onPreviewVisible(sessionId: string, open: boolean) {
+  const idx = previewSessions.value.findIndex((p) => p.id === sessionId)
+  if (idx < 0) return
+  if (open) {
+    previewSessions.value[idx].visible = true
+    return
+  }
+  // 关闭后移除，释放播放器/文档资源
+  previewSessions.value.splice(idx, 1)
+}
+
+function raisePreview(sessionId: string) {
+  const s = previewSessions.value.find((p) => p.id === sessionId)
+  if (!s || !s.visible) return
+  if (s.zIndex >= previewZ) return
+  s.zIndex = ++previewZ
+}
+
+function openFilePreview(row: Row, type: PreviewType, kind: 'pdf' | 'txt' | 'office' = 'pdf') {
+  const existing = previewSessions.value.find((p) => p.fileId === row.id)
+  if (existing) {
+    existing.visible = true
+    existing.zIndex = ++previewZ
+    existing.activateKey = ++previewActivateSeq
+    ElMessage.info('该文件已在预览中，已切换到对应窗口')
+    return
+  }
+  const openCount = previewSessions.value.filter((p) => p.visible).length
+  if (openCount >= MAX_PREVIEW_WINDOWS) {
+    ElMessage.warning(`最多同时打开 ${MAX_PREVIEW_WINDOWS} 个预览窗口，请先关闭一些`)
+    return
+  }
+  previewSessions.value.push({
+    id: `pv-${++previewSeq}`,
+    fileId: row.id,
+    title: row.name,
+    type,
+    kind,
+    visible: true,
+    zIndex: ++previewZ,
+    activateKey: ++previewActivateSeq,
+  })
+}
 
 const rows = computed<Row[]>(() => {
   if (!view.value) return []
@@ -483,6 +565,7 @@ async function refresh(fid?: string) {
     }
     view.value = v
     localStorage.setItem('folder_id', v.folder.folderId)
+    thumbFailed.value = new Set()
     if (v.foldersOffset > v.selectStep || v.filesOffset > v.selectStep) {
       const rem = await getRemaining(v.folder.folderId, Math.min(v.selectStep, v.folderList.length), Math.min(v.selectStep, v.fileList.length))
       view.value.folderList = [...v.folderList, ...rem.folderList.filter((f) => !v.folderList.some((x) => x.folderId === f.folderId))]
@@ -582,6 +665,10 @@ async function onDrop(e: DragEvent) {
     return
   }
   if (!view.value || !e.dataTransfer) return
+  if (uploadBusy) {
+    ElMessage.warning('正在上传中，请稍候再拖入')
+    return
+  }
   try {
     const files = await collectDroppedFiles(e.dataTransfer)
     if (!files.length) {
@@ -684,6 +771,11 @@ async function uploadDroppedFiles(files: Array<File & { webkitRelativePath?: str
 }
 
 async function uploadFilesBatch(files: File[]) {
+  if (uploadBusy) {
+    ElMessage.warning('正在上传中，请稍候')
+    return
+  }
+  uploadBusy = true
   const folderId = view.value!.folder.folderId
   uploadProgress.value = 0
   let ok = 0
@@ -733,6 +825,7 @@ async function uploadFilesBatch(files: File[]) {
     ElMessage.error(e.message || '上传失败')
   } finally {
     uploadProgress.value = -1
+    uploadBusy = false
   }
 }
 
@@ -761,8 +854,17 @@ async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: str
 }
 
 async function doUploadFolder(opt: UploadRequestOptions) {
-  const file = opt.file as File & { webkitRelativePath?: string }
-  await uploadOneWithRelativePath(file)
+  // el-upload 会对每个文件并发调用；排队避免 Tomcat swallow 连环报错
+  while (uploadBusy) {
+    await new Promise((r) => setTimeout(r, 200))
+  }
+  uploadBusy = true
+  try {
+    const file = opt.file as File & { webkitRelativePath?: string }
+    await uploadOneWithRelativePath(file)
+  } finally {
+    uploadBusy = false
+  }
   refresh()
 }
 
@@ -939,12 +1041,25 @@ function isEpub(name: string) {
   return /\.epub$/i.test(name)
 }
 
-function openFilePreview(row: Row, type: PreviewType, kind: 'pdf' | 'txt' | 'office' = 'pdf') {
-  filePreviewTitle.value = row.name
-  filePreviewId.value = row.id
-  filePreviewType.value = type
-  filePreviewKind.value = kind
-  filePreviewVisible.value = true
+const thumbFailed = ref(new Set<string>())
+
+function supportsThumb(name: string) {
+  return isImage(name) || isVideo(name) || isPdf(name) || isPpt(name)
+}
+
+function showThumb(row: Row) {
+  return row.kind === 'file' && supportsThumb(row.name) && !thumbFailed.value.has(row.id)
+}
+
+function thumbSrc(row: Row) {
+  return previewThumbUrl(row.id, auth.token)
+}
+
+function onThumbError(fileId: string) {
+  if (thumbFailed.value.has(fileId)) return
+  const next = new Set(thumbFailed.value)
+  next.add(fileId)
+  thumbFailed.value = next
 }
 
 async function preview(row: Row) {
@@ -1263,6 +1378,35 @@ onMounted(async () => {
   margin-right: 8px;
   font-size: 18px;
   flex-shrink: 0;
+}
+.file-thumb-wrap {
+  position: relative;
+  width: 36px;
+  height: 28px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #e5e7eb;
+  border: 1px solid #d1d5db;
+}
+.file-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.file-thumb-play {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 7px;
+  border-color: transparent transparent transparent rgba(255, 255, 255, 0.92);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.55));
+  pointer-events: none;
 }
 .icon-folder { color: #e6a23c; }
 .icon-image { color: #67c23a; }

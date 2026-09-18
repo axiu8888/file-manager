@@ -9,7 +9,7 @@ import java.util.List;
 public record HttpLoggingProperties(
         @DefaultValue("true") boolean enabled,
         @DefaultValue("true") boolean multiLine,
-        @DefaultValue({"/api/preview/resource/**", "/api/system/ping", "/webdav", "/webdav/**"})
+        @DefaultValue({"/api/preview/resource/**", "/api/preview/thumb/**", "/api/system/ping", "/webdav", "/webdav/**"})
         List<String> excludePaths
 ) {
 }

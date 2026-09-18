@@ -1,6 +1,7 @@
 package com.kiftd.config;
 
 import com.kiftd.security.JwtAuthFilter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -42,7 +43,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> {
                     String api = props.normalizedApiPrefix();
-                    auth.requestMatchers("/error").permitAll()
+                    // 视频/下载用 StreamingResponseBody，Tomcat 会再做一次 ASYNC 派发。
+                    // Spring Security 6 的 MVC 匹配器不覆盖这次派发，登录态也带不过去，会误报 Access Denied。
+                    auth.dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/auth/**", api + "/auth/**").permitAll()
                         .requestMatchers("/system/**", api + "/system/**").permitAll()
                         .requestMatchers("/links/**", api + "/links/**").permitAll()

@@ -41,6 +41,8 @@ public class PreviewService {
     private final KiftdProperties props;
     private final Map<String, String> transcodeStatus = new ConcurrentHashMap<>();
     private final Map<String, byte[]> pptSlideCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Object> thumbLocks = new ConcurrentHashMap<>();
+    private static final int THUMB_MAX_EDGE = 160;
 
     public PreviewService(FileNodeRepository fileNodeRepository, FileService fileService,
                           FolderService folderService, StorageService storageService, KiftdProperties props) {
@@ -291,6 +293,180 @@ public class PreviewService {
                 throw new BizException("PPT 渲染失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
         }
+    }
+
+    /**
+     * 生成并缓存 JPEG 缩略图（图片 / 视频首帧 / PDF 首页 / PPT 首页），供列表与侧栏使用。
+     */
+    public byte[] thumbnailJpeg(String fileId) {
+        FileNode node = fileService.requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
+        String name = node.getFileName();
+        if (!supportsThumbnail(name)) {
+            throw new BizException("该类型不支持缩略图");
+        }
+        Path src;
+        try {
+            src = storageService.resolveBlock(node.getFilePath());
+            if (!Files.isRegularFile(src)) {
+                throw new BizException("文件不存在");
+            }
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BizException("读取文件失败");
+        }
+        long mtime;
+        try {
+            mtime = Files.getLastModifiedTime(src).toMillis();
+        } catch (IOException e) {
+            throw new BizException("读取文件失败");
+        }
+        String cacheName = fileId + "_" + mtime + ".jpg";
+        Path cache = storageService.resolveThumb(cacheName);
+        try {
+            if (Files.isRegularFile(cache)) {
+                return Files.readAllBytes(cache);
+            }
+        } catch (IOException e) {
+            /* 重新生成 */
+        }
+        Object lock = thumbLocks.computeIfAbsent(fileId, k -> new Object());
+        synchronized (lock) {
+            try {
+                if (Files.isRegularFile(cache)) {
+                    return Files.readAllBytes(cache);
+                }
+                byte[] jpeg;
+                if (isImage(name)) {
+                    jpeg = thumbnailFromImage(src);
+                } else if (isVideo(name)) {
+                    jpeg = thumbnailFromVideo(src);
+                } else if (isPdf(name)) {
+                    jpeg = thumbnailFromPdf(src);
+                } else if (isPpt(name)) {
+                    jpeg = scaleToJpeg(javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(pptSlidePng(fileId, 0))), THUMB_MAX_EDGE);
+                } else {
+                    throw new BizException("该类型不支持缩略图");
+                }
+                Files.createDirectories(cache.getParent());
+                Files.write(cache, jpeg);
+                purgeOldThumbs(fileId, cacheName);
+                return jpeg;
+            } catch (BizException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new BizException("缩略图生成失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            } finally {
+                thumbLocks.remove(fileId, lock);
+            }
+        }
+    }
+
+    private void purgeOldThumbs(String fileId, String keepName) {
+        try (var stream = Files.list(storageService.getThumbsDir())) {
+            String prefix = fileId + "_";
+            stream.filter(p -> {
+                String n = p.getFileName().toString();
+                return n.startsWith(prefix) && n.endsWith(".jpg") && !n.equals(keepName);
+            }).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException ignored) {
+                    /* ignore */
+                }
+            });
+        } catch (IOException ignored) {
+            /* ignore */
+        }
+    }
+
+    private byte[] thumbnailFromImage(Path src) throws IOException {
+        java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(src.toFile());
+        if (img == null) {
+            throw new BizException("无法解析图片");
+        }
+        return scaleToJpeg(img, THUMB_MAX_EDGE);
+    }
+
+    private byte[] thumbnailFromPdf(Path src) throws IOException {
+        try (PDDocument doc = Loader.loadPDF(src.toFile())) {
+            if (doc.getNumberOfPages() < 1) {
+                throw new BizException("PDF 无页面");
+            }
+            org.apache.pdfbox.rendering.PDFRenderer renderer = new org.apache.pdfbox.rendering.PDFRenderer(doc);
+            java.awt.image.BufferedImage img = renderer.renderImageWithDPI(0, 96, org.apache.pdfbox.rendering.ImageType.RGB);
+            return scaleToJpeg(img, THUMB_MAX_EDGE);
+        }
+    }
+
+    private byte[] thumbnailFromVideo(Path src) throws IOException, InterruptedException {
+        Path out = storageService.tempFile(".jpg");
+        try {
+            if (!runFfmpegThumb(src, out, "1") && !runFfmpegThumb(src, out, "0")) {
+                throw new BizException("视频缩略图生成失败（请确认已配置 ffmpeg）");
+            }
+            if (!Files.isRegularFile(out) || Files.size(out) < 32) {
+                throw new BizException("视频缩略图为空");
+            }
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(out.toFile());
+            if (img == null) {
+                return Files.readAllBytes(out);
+            }
+            return scaleToJpeg(img, THUMB_MAX_EDGE);
+        } finally {
+            Files.deleteIfExists(out);
+        }
+    }
+
+    private boolean runFfmpegThumb(Path src, Path out, String seekSec) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(
+                props.ffmpeg().path(),
+                "-y",
+                "-ss", seekSec,
+                "-i", src.toString(),
+                "-frames:v", "1",
+                "-vf", "scale=" + THUMB_MAX_EDGE + ":-2",
+                "-q:v", "3",
+                out.toString());
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        try (InputStream in = p.getInputStream()) {
+            in.transferTo(OutputStream.nullOutputStream());
+        }
+        return p.waitFor() == 0 && Files.isRegularFile(out);
+    }
+
+    private static byte[] scaleToJpeg(java.awt.image.BufferedImage src, int maxEdge) throws IOException {
+        if (src == null) {
+            throw new BizException("无法生成缩略图");
+        }
+        int w = Math.max(1, src.getWidth());
+        int h = Math.max(1, src.getHeight());
+        double scale = Math.min(1.0, (double) maxEdge / Math.max(w, h));
+        int nw = Math.max(1, (int) Math.round(w * scale));
+        int nh = Math.max(1, (int) Math.round(h * scale));
+        java.awt.image.BufferedImage out =
+                new java.awt.image.BufferedImage(nw, nh, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = out.createGraphics();
+        try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+            g.setColor(java.awt.Color.WHITE);
+            g.fillRect(0, 0, nw, nh);
+            g.drawImage(src, 0, 0, nw, nh, null);
+        } finally {
+            g.dispose();
+        }
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        if (!javax.imageio.ImageIO.write(out, "jpg", bos)) {
+            throw new BizException("JPEG 编码失败");
+        }
+        return bos.toByteArray();
+    }
+
+    public static boolean supportsThumbnail(String name) {
+        return isImage(name) || isVideo(name) || isPdf(name) || isPpt(name);
     }
 
     private FileNode requireExcelLikePpt(String fileId) {
