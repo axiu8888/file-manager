@@ -11,3 +11,7 @@ mv jdk-15.0.2 jdk_x86-64
 # mv jdk-15.0.2 jdk_aarch64
 
 
+
+# 建立软连接
+bash ln_s_jdk.sh
+

@@ -13,8 +13,9 @@ echo "启动 $name, 目录：$dir"
 docker run -d -it --privileged=true --restart=always \
   --network mynet --network-alias mynet-$name \
   -p 280:80/tcp \
-  -v /etc/localtime:/etc/localtime \
+  -v /etc/localtime:/etc/localtime:ro \
   -v "$dir/start.sh":/docker-entrypoint.sh \
+  -v "$dir/data":/opt/app/data \
   -v "$dir":/opt/app/ \
   --name $name \
   hsrg-jdk:21

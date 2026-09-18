@@ -48,6 +48,6 @@ ENTRYPOINT ["/docker-entrypoint.sh"]
 #--rm :设置镜像成功后删除中间容器；
 #--tag, -t: 镜像的名字及标签，通常 name:tag 或者 name 格式；
 # 拷贝Dockerfile和start.sh文件到centos，然后执行如下命令
-# docker build -f Dockerfile --rm  --tag arm64v8/hsrg-jdk:21 .
-# docker build -f Dockerfile --rm  --tag hsrg-jdk:21 .
+# docker build -f Dockerfile --rm  --tag arm64v8/my-jdk:21 .
+# docker build -f Dockerfile --rm  --tag my-jdk:21 .
 
