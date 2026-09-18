@@ -183,28 +183,27 @@
       </template>
       <template #default="{ immersive }">
         <div class="img-preview-body" :class="{ immersive }">
-          <div class="img-viewer">
-            <el-button class="img-nav prev" circle :disabled="imgIndex <= 0" @click="imgIndex--">
-              <el-icon><ArrowLeft /></el-icon>
-            </el-button>
-            <div class="img-stage">
-              <img v-if="currentPicture" :src="pictureSrc(currentPicture)" :alt="currentPicture.fileName" />
+          <div class="img-with-list">
+            <div class="img-viewer">
+              <el-button class="img-nav prev" circle :disabled="imgIndex <= 0" @click="imgIndex--">
+                <el-icon><ArrowLeft /></el-icon>
+              </el-button>
+              <div class="img-stage">
+                <img v-if="currentPicture" :src="pictureSrc(currentPicture)" :alt="currentPicture.fileName" />
+              </div>
+              <el-button class="img-nav next" circle :disabled="imgIndex >= pictures.length - 1" @click="imgIndex++">
+                <el-icon><ArrowRight /></el-icon>
+              </el-button>
             </div>
-            <el-button class="img-nav next" circle :disabled="imgIndex >= pictures.length - 1" @click="imgIndex++">
-              <el-icon><ArrowRight /></el-icon>
-            </el-button>
-          </div>
-          <div v-if="pictures.length > 1 && !immersive" class="img-thumbs">
-            <button
-              v-for="(p, i) in pictures"
-              :key="p.fileId"
-              type="button"
-              class="img-thumb"
-              :class="{ active: i === imgIndex }"
-              @click="imgIndex = i"
-            >
-              <img :src="pictureSrc(p)" :alt="p.fileName" />
-            </button>
+            <SiblingPlaylist
+              v-model:open="imgListOpen"
+              :items="pictureSiblings"
+              :active-id="currentPicture?.fileId || ''"
+              :immersive="immersive"
+              tone="dark"
+              title="图片列表"
+              @select="onSelectPicture"
+            />
           </div>
         </div>
       </template>
@@ -213,16 +212,36 @@
     <AppWindow
       v-model="audioVisible"
       title="音频播放"
-      :initial-width="560"
+      :initial-width="720"
       :initial-height="420"
       @closed="onAudioClosed"
     >
-      <div class="audio-preview-body">
-        <div v-for="a in audios" :key="a.fileId" class="audio-item">
-          <div class="audio-name">{{ a.fileName }}</div>
-          <audio :src="a.url" controls preload="none" style="width:100%" />
+      <template #default="{ immersive }">
+        <div class="audio-preview-body">
+          <div class="audio-with-list">
+            <div class="audio-main">
+              <div class="audio-now">{{ currentAudio?.fileName || '音频播放' }}</div>
+              <audio
+                v-if="currentAudio"
+                :key="currentAudio.fileId"
+                ref="audioRef"
+                :src="audioSrc(currentAudio)"
+                controls
+                preload="metadata"
+              />
+            </div>
+            <SiblingPlaylist
+              v-model:open="audioListOpen"
+              :items="audioSiblings"
+              :active-id="currentAudio?.fileId || ''"
+              :immersive="immersive"
+              tone="light"
+              title="播放列表"
+              @select="onSelectAudio"
+            />
+          </div>
         </div>
-      </div>
+      </template>
     </AppWindow>
 
     <PreviewDialog
@@ -243,12 +262,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
 import PreviewDialog, { type PreviewType } from '@/components/PreviewDialog.vue'
 import AppWindow from '@/components/AppWindow.vue'
+import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import {
   batchDelete,
   checkUpload,
@@ -277,6 +297,7 @@ import {
 } from '@/api/files'
 import { changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { bindVideoVolume } from '@/utils/mediaVolume'
 import {
   Search,
   FolderAdd,
@@ -315,9 +336,13 @@ const oldPwd = ref('')
 const newPwd = ref('')
 const imgVisible = ref(false)
 const imgIndex = ref(0)
+const imgListOpen = ref(true)
 const pictures = ref<{ fileId: string; fileName: string; url: string }[]>([])
 
 const currentPicture = computed(() => pictures.value[imgIndex.value] || null)
+const pictureSiblings = computed<SiblingItem[]>(() =>
+  pictures.value.map((p) => ({ fileId: p.fileId, fileName: p.fileName, thumb: pictureSrc(p) })),
+)
 
 function pictureSrc(p: { fileId: string; url: string }) {
   const u = p.url || ''
@@ -326,15 +351,53 @@ function pictureSrc(p: { fileId: string; url: string }) {
   return `/api/preview/resource/${p.fileId}`
 }
 
+function onSelectPicture(item: SiblingItem) {
+  const i = pictures.value.findIndex((p) => p.fileId === item.fileId)
+  if (i >= 0) imgIndex.value = i
+}
+
 function onImgClosed() {
   imgIndex.value = 0
   pictures.value = []
+  imgListOpen.value = true
 }
 const audioVisible = ref(false)
+const audioIndex = ref(0)
+const audioListOpen = ref(true)
+const audioRef = ref<HTMLAudioElement | null>(null)
 const audios = ref<{ fileId: string; fileName: string; url: string }[]>([])
+const currentAudio = computed(() => audios.value[audioIndex.value] || null)
+const audioSiblings = computed<SiblingItem[]>(() =>
+  audios.value.map((a) => ({ fileId: a.fileId, fileName: a.fileName })),
+)
+
+function audioSrc(a: { fileId: string; url: string }) {
+  const u = a.url || ''
+  if (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:')) return u
+  if (u.startsWith('/')) return u
+  return `/api/preview/resource/${a.fileId}`
+}
+
+function onSelectAudio(item: SiblingItem) {
+  const i = audios.value.findIndex((a) => a.fileId === item.fileId)
+  if (i >= 0) audioIndex.value = i
+}
+
+watch([currentAudio, audioVisible], async () => {
+  if (!audioVisible.value || !currentAudio.value) return
+  await nextTick()
+  bindVideoVolume(audioRef.value)
+  try {
+    await audioRef.value?.play()
+  } catch {
+    /* autoplay may be blocked */
+  }
+})
 
 function onAudioClosed() {
   audios.value = []
+  audioIndex.value = 0
+  audioListOpen.value = true
 }
 const linkVisible = ref(false)
 const linkText = ref('')
@@ -725,7 +788,13 @@ function isTxt(name: string) {
   ) || /^(dockerfile|makefile|license|readme)$/i.test(name)
 }
 function isOffice(name: string) {
-  return /\.(docx?|pptx?)$/i.test(name)
+  return /\.(docx?)$/i.test(name)
+}
+function isExcel(name: string) {
+  return /\.(xlsx|xls)$/i.test(name)
+}
+function isPpt(name: string) {
+  return /\.(pptx|ppt)$/i.test(name)
 }
 function isEpub(name: string) {
   return /\.epub$/i.test(name)
@@ -747,10 +816,14 @@ async function preview(row: Row) {
     pictures.value = p.pictureViewList || []
     imgIndex.value = Math.min(Math.max(p.index || 0, 0), Math.max(pictures.value.length - 1, 0))
     imgVisible.value = true
+    imgListOpen.value = pictures.value.length > 1
     return
   }
   if (isAudio(name)) {
     audios.value = await getAudios(view.value!.folder.folderId)
+    const idx = audios.value.findIndex((a) => a.fileId === row.id)
+    audioIndex.value = idx >= 0 ? idx : 0
+    audioListOpen.value = audios.value.length > 1
     audioVisible.value = true
     return
   }
@@ -769,6 +842,14 @@ async function preview(row: Row) {
   }
   if (isTxt(name)) {
     openFilePreview(row, 'text')
+    return
+  }
+  if (isExcel(name)) {
+    openFilePreview(row, 'excel')
+    return
+  }
+  if (isPpt(name)) {
+    openFilePreview(row, 'ppt')
     return
   }
   if (isOffice(name)) {
@@ -1112,13 +1193,16 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
-  padding: 10px 12px 12px;
-  gap: 10px;
+  padding: 0;
+}
+.img-with-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
 }
 .img-preview-body.immersive {
-  padding: 0;
-  gap: 0;
   background: #000;
 }
 .img-preview-body.immersive .img-viewer {
@@ -1131,9 +1215,9 @@ onMounted(async () => {
   justify-content: center;
   gap: 12px;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   background: #111827;
-  border-radius: 8px;
   overflow: hidden;
 }
 .img-stage {
@@ -1160,34 +1244,6 @@ onMounted(async () => {
 }
 .img-nav.prev { left: 12px; }
 .img-nav.next { right: 12px; }
-.img-thumbs {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 88px;
-  overflow: auto;
-  flex-shrink: 0;
-}
-.img-thumb {
-  border: 2px solid transparent;
-  padding: 0;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  overflow: hidden;
-  width: 64px;
-  height: 64px;
-}
-.img-thumb.active {
-  border-color: var(--accent);
-}
-.img-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
 .preview-title {
   font-size: 13px;
   font-weight: 600;
@@ -1198,15 +1254,33 @@ onMounted(async () => {
 .audio-preview-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: 14px 16px;
+  display: flex;
 }
-.audio-item {
-  margin-bottom: 12px;
+.audio-with-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
 }
-.audio-name {
-  margin-bottom: 6px;
-  font-size: 13px;
-  color: #374151;
+.audio-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 28px 32px;
+}
+.audio-now {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.audio-main audio {
+  width: 100%;
 }
 </style>

@@ -22,7 +22,7 @@ export function setCachedVideoVolume(volume: number) {
   }
 }
 
-export function bindVideoVolume(el: HTMLVideoElement | null | undefined) {
+export function bindVideoVolume(el: HTMLMediaElement | null | undefined) {
   if (!el) return
   el.volume = getCachedVideoVolume()
   el.onvolumechange = () => {

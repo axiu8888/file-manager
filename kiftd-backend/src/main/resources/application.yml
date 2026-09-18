@@ -9,6 +9,8 @@ server:
       force-response: false
 
 spring:
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: kiftd-backend
   datasource:
@@ -57,6 +59,14 @@ kiftd:
   webdav:
     enabled: true
     path: /webdav/*
+  http-logging:
+    enabled: true
+    multi-line: true
+    exclude-paths:
+      - /api/preview/resource/**
+      - /api/system/ping
+      - /webdav
+      - /webdav/**
 
 logging:
   level:

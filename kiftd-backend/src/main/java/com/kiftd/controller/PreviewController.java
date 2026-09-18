@@ -1,5 +1,6 @@
 package com.kiftd.controller;
 
+import com.kiftd.aop.HttpLoggingIgnore;
 import com.kiftd.common.ApiResponse;
 import com.kiftd.entity.FileNode;
 import com.kiftd.service.FileService;
@@ -52,11 +53,42 @@ public class PreviewController {
         return ApiResponse.ok(previewService.video(fileId));
     }
 
+    @GetMapping("/videos")
+    public ApiResponse<FileDtos.VideoViewList> videos(@RequestParam String fileId) {
+        return ApiResponse.ok(previewService.videos(fileId));
+    }
+
+    @GetMapping("/siblings")
+    public ApiResponse<FileDtos.SiblingViewList> siblings(@RequestParam String fileId) {
+        return ApiResponse.ok(previewService.siblings(fileId));
+    }
+
+    @GetMapping("/excel")
+    public ApiResponse<FileDtos.ExcelPreview> excel(@RequestParam String fileId) {
+        return ApiResponse.ok(previewService.excelPreview(fileId));
+    }
+
+    @GetMapping("/ppt")
+    public ApiResponse<FileDtos.PptPreview> ppt(@RequestParam String fileId) {
+        return ApiResponse.ok(previewService.pptPreview(fileId));
+    }
+
+    @HttpLoggingIgnore
+    @GetMapping("/ppt-slide/{fileId}/{index}")
+    public ResponseEntity<byte[]> pptSlide(@PathVariable String fileId, @PathVariable int index) {
+        byte[] png = previewService.pptSlidePng(fileId, index);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=120")
+                .contentType(MediaType.IMAGE_PNG)
+                .body(png);
+    }
+
     @GetMapping("/transcode-status")
     public ApiResponse<String> transcode(@RequestParam String fileId) {
         return ApiResponse.ok(previewService.transcodeStatus(fileId));
     }
 
+    @HttpLoggingIgnore
     @GetMapping("/resource/{fileId}")
     public ResponseEntity<StreamingResponseBody> resource(@PathVariable String fileId,
                                                           HttpServletRequest request) throws IOException {

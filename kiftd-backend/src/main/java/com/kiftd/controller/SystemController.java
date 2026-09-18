@@ -1,5 +1,6 @@
 package com.kiftd.controller;
 
+import com.kiftd.aop.HttpLoggingIgnore;
 import com.kiftd.common.ApiResponse;
 import com.kiftd.service.SystemService;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ public class SystemController {
         return ApiResponse.ok(systemService.osInfo());
     }
 
+    @HttpLoggingIgnore
     @GetMapping("/ping")
     public ApiResponse<String> ping() {
         return ApiResponse.ok(systemService.ping());

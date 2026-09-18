@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -39,6 +40,7 @@ public class PreviewService {
     private final StorageService storageService;
     private final KiftdProperties props;
     private final Map<String, String> transcodeStatus = new ConcurrentHashMap<>();
+    private final Map<String, byte[]> pptSlideCache = new ConcurrentHashMap<>();
 
     public PreviewService(FileNodeRepository fileNodeRepository, FileService fileService,
                           FolderService folderService, StorageService storageService, KiftdProperties props) {
@@ -86,6 +88,248 @@ public class PreviewService {
         folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
         boolean need = !node.getFileName().toLowerCase(Locale.ROOT).endsWith(".mp4");
         return new FileDtos.VideoInfo(fileId, node.getFileName(), need);
+    }
+
+    public FileDtos.VideoViewList videos(String fileId) {
+        FileNode current = fileService.requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(current.getFileParentFolder()));
+        List<FileDtos.VideoItem> list = new ArrayList<>();
+        int index = 0;
+        int i = 0;
+        for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(current.getFileParentFolder())) {
+            if (isVideo(f.getFileName())) {
+                if (f.getFileId().equals(fileId)) {
+                    index = i;
+                }
+                list.add(new FileDtos.VideoItem(f.getFileId(), f.getFileName()));
+                i++;
+            }
+        }
+        return new FileDtos.VideoViewList(list, index);
+    }
+
+    public FileDtos.SiblingViewList siblings(String fileId) {
+        FileNode current = fileService.requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(current.getFileParentFolder()));
+        String category = previewCategory(current.getFileName());
+        List<FileDtos.SiblingItem> list = new ArrayList<>();
+        int index = 0;
+        int i = 0;
+        if (category.isEmpty()) {
+            list.add(new FileDtos.SiblingItem(current.getFileId(), current.getFileName()));
+            return new FileDtos.SiblingViewList(list, 0, category);
+        }
+        for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(current.getFileParentFolder())) {
+            if (category.equals(previewCategory(f.getFileName()))) {
+                if (f.getFileId().equals(fileId)) {
+                    index = i;
+                }
+                list.add(new FileDtos.SiblingItem(f.getFileId(), f.getFileName()));
+                i++;
+            }
+        }
+        return new FileDtos.SiblingViewList(list, index, category);
+    }
+
+    public FileDtos.ExcelPreview excelPreview(String fileId) {
+        FileNode node = fileService.requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
+        if (!isExcel(node.getFileName())) {
+            throw new BizException("不是 Excel 文件");
+        }
+        Path path = storageService.resolveBlock(node.getFilePath());
+        try {
+            if (Files.size(path) > 20L * 1024 * 1024) {
+                throw new BizException("表格过大（超过 20MB），请下载后查看");
+            }
+        } catch (IOException e) {
+            throw new BizException("读取文件失败");
+        }
+        try (InputStream in = Files.newInputStream(path);
+             org.apache.poi.ss.usermodel.Workbook wb = org.apache.poi.ss.usermodel.WorkbookFactory.create(in)) {
+            org.apache.poi.ss.usermodel.DataFormatter formatter =
+                    new org.apache.poi.ss.usermodel.DataFormatter(Locale.CHINA);
+            org.apache.poi.ss.usermodel.FormulaEvaluator evaluator =
+                    wb.getCreationHelper().createFormulaEvaluator();
+            List<FileDtos.ExcelSheet> sheets = new ArrayList<>();
+            for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+                org.apache.poi.ss.usermodel.Sheet sheet = wb.getSheetAt(s);
+                if (sheet == null) {
+                    continue;
+                }
+                if (wb.isSheetHidden(s) || wb.isSheetVeryHidden(s)) {
+                    continue;
+                }
+                sheets.add(readExcelSheet(sheet, formatter, evaluator));
+            }
+            if (sheets.isEmpty() && wb.getNumberOfSheets() > 0) {
+                sheets.add(readExcelSheet(wb.getSheetAt(0), formatter, evaluator));
+            }
+            return new FileDtos.ExcelPreview(node.getFileName(), sheets);
+        } catch (BizException e) {
+            throw e;
+        } catch (org.apache.poi.EncryptedDocumentException e) {
+            throw new BizException("文件已加密，无法预览");
+        } catch (Exception e) {
+            throw new BizException("Excel 解析失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+        }
+    }
+
+    private static FileDtos.ExcelSheet readExcelSheet(org.apache.poi.ss.usermodel.Sheet sheet,
+                                                      org.apache.poi.ss.usermodel.DataFormatter formatter,
+                                                      org.apache.poi.ss.usermodel.FormulaEvaluator evaluator) {
+        String name = sheet.getSheetName() == null || sheet.getSheetName().isBlank() ? "Sheet" : sheet.getSheetName();
+        if (sheet.getPhysicalNumberOfRows() <= 0) {
+            return new FileDtos.ExcelSheet(name, List.of(), false);
+        }
+        int lastRow = Math.min(Math.max(sheet.getLastRowNum(), 0), EXCEL_MAX_ROWS - 1);
+        int maxCols = 0;
+        List<List<String>> rows = new ArrayList<>();
+        boolean truncated = sheet.getLastRowNum() >= EXCEL_MAX_ROWS;
+        for (int r = 0; r <= lastRow; r++) {
+            org.apache.poi.ss.usermodel.Row row = sheet.getRow(r);
+            List<String> cells = new ArrayList<>();
+            int lastCell = row == null ? -1 : Math.min(row.getLastCellNum() - 1, EXCEL_MAX_COLS - 1);
+            if (row != null && row.getLastCellNum() > EXCEL_MAX_COLS) {
+                truncated = true;
+            }
+            for (int c = 0; c <= lastCell; c++) {
+                cells.add(formatExcelCell(row.getCell(c), formatter, evaluator));
+            }
+            maxCols = Math.max(maxCols, cells.size());
+            rows.add(cells);
+        }
+        for (List<String> cells : rows) {
+            while (cells.size() < maxCols) {
+                cells.add("");
+            }
+        }
+        return new FileDtos.ExcelSheet(name, rows, truncated);
+    }
+
+    public FileDtos.PptPreview pptPreview(String fileId) {
+        FileNode node = requireExcelLikePpt(fileId);
+        Path path = storageService.resolveBlock(node.getFilePath());
+        ensurePptSize(path);
+        try (InputStream in = Files.newInputStream(path);
+             org.apache.poi.sl.usermodel.SlideShow<?, ?> show = org.apache.poi.sl.usermodel.SlideShowFactory.create(in)) {
+            List<? extends org.apache.poi.sl.usermodel.Slide<?, ?>> slides = show.getSlides();
+            int count = Math.min(slides.size(), PPT_MAX_SLIDES);
+            List<FileDtos.PptSlide> list = new ArrayList<>(count);
+            for (int i = 0; i < count; i++) {
+                String title = slides.get(i).getTitle();
+                if (title == null || title.isBlank()) {
+                    title = "第 " + (i + 1) + " 页";
+                } else {
+                    title = title.replaceAll("\\s+", " ").trim();
+                }
+                list.add(new FileDtos.PptSlide(i, title));
+            }
+            return new FileDtos.PptPreview(node.getFileName(), list);
+        } catch (BizException e) {
+            throw e;
+        } catch (org.apache.poi.EncryptedDocumentException e) {
+            throw new BizException("文件已加密，无法预览");
+        } catch (Exception e) {
+            throw new BizException("PPT 解析失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+        }
+    }
+
+    public byte[] pptSlidePng(String fileId, int index) {
+        FileNode node = requireExcelLikePpt(fileId);
+        Path path = storageService.resolveBlock(node.getFilePath());
+        ensurePptSize(path);
+        if (index < 0) {
+            throw new BizException("幻灯片页码无效");
+        }
+        String cacheKey = fileId + "#" + index + "#" + path.toAbsolutePath() + "#" + path.toFile().lastModified();
+        byte[] cached = pptSlideCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (pptSlideCache) {
+            cached = pptSlideCache.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            try (InputStream in = Files.newInputStream(path);
+                 org.apache.poi.sl.usermodel.SlideShow<?, ?> show = org.apache.poi.sl.usermodel.SlideShowFactory.create(in)) {
+                List<? extends org.apache.poi.sl.usermodel.Slide<?, ?>> slides = show.getSlides();
+                if (index >= slides.size() || index >= PPT_MAX_SLIDES) {
+                    throw new BizException("幻灯片页码无效");
+                }
+                java.awt.Dimension pg = show.getPageSize();
+                int w = Math.max(1, (int) Math.round(pg.getWidth() * PPT_SCALE));
+                int h = Math.max(1, (int) Math.round(pg.getHeight() * PPT_SCALE));
+                java.awt.image.BufferedImage img =
+                        new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+                java.awt.Graphics2D g = img.createGraphics();
+                try {
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    g.setPaint(java.awt.Color.WHITE);
+                    g.fillRect(0, 0, w, h);
+                    g.scale(PPT_SCALE, PPT_SCALE);
+                    slides.get(index).draw(g);
+                } finally {
+                    g.dispose();
+                }
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(img, "png", bos);
+                byte[] png = bos.toByteArray();
+                if (pptSlideCache.size() > 200) {
+                    pptSlideCache.clear();
+                }
+                pptSlideCache.put(cacheKey, png);
+                return png;
+            } catch (BizException e) {
+                throw e;
+            } catch (org.apache.poi.EncryptedDocumentException e) {
+                throw new BizException("文件已加密，无法预览");
+            } catch (Exception e) {
+                throw new BizException("PPT 渲染失败: " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+        }
+    }
+
+    private FileNode requireExcelLikePpt(String fileId) {
+        FileNode node = fileService.requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
+        if (!isPpt(node.getFileName())) {
+            throw new BizException("不是 PowerPoint 文件");
+        }
+        return node;
+    }
+
+    private static void ensurePptSize(Path path) {
+        try {
+            if (Files.size(path) > PPT_MAX_BYTES) {
+                throw new BizException("演示文稿过大（超过 40MB），请下载后查看");
+            }
+        } catch (IOException e) {
+            throw new BizException("读取文件失败");
+        }
+    }
+
+    private static String formatExcelCell(org.apache.poi.ss.usermodel.Cell cell,
+                                          org.apache.poi.ss.usermodel.DataFormatter formatter,
+                                          org.apache.poi.ss.usermodel.FormulaEvaluator evaluator) {
+        if (cell == null) {
+            return "";
+        }
+        try {
+            if (cell.getCellType() == org.apache.poi.ss.usermodel.CellType.FORMULA) {
+                return formatter.formatCellValue(cell, evaluator);
+            }
+            return formatter.formatCellValue(cell);
+        } catch (Exception e) {
+            try {
+                return formatter.formatCellValue(cell);
+            } catch (Exception ignored) {
+                return "";
+            }
+        }
     }
 
     public String transcodeStatus(String fileId) {
@@ -256,6 +500,67 @@ public class PreviewService {
         String n = name.toLowerCase(Locale.ROOT);
         return n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".avi") || n.endsWith(".mov") || n.endsWith(".webm");
     }
+
+    public static boolean isPdf(String name) {
+        return name.toLowerCase(Locale.ROOT).endsWith(".pdf");
+    }
+
+    public static boolean isEpub(String name) {
+        return name.toLowerCase(Locale.ROOT).endsWith(".epub");
+    }
+
+    public static boolean isOffice(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".doc") || n.endsWith(".docx");
+    }
+
+    public static boolean isPpt(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".pptx") || n.endsWith(".ppt");
+    }
+
+    public static boolean isText(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        int dot = n.lastIndexOf('.');
+        String ext = dot >= 0 ? n.substring(dot + 1) : "";
+        String base = dot > 0 ? n.substring(0, dot) : n;
+        if (TEXT_EXTS.contains(ext)) {
+            return true;
+        }
+        return TEXT_NAMES.contains(n) || TEXT_NAMES.contains(base);
+    }
+
+    public static boolean isExcel(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".xlsx") || n.endsWith(".xls");
+    }
+
+    public static String previewCategory(String name) {
+        if (isImage(name)) return "image";
+        if (isAudio(name)) return "audio";
+        if (isVideo(name)) return "video";
+        if (isPdf(name)) return "pdf";
+        if (isEpub(name)) return "epub";
+        if (isExcel(name)) return "excel";
+        if (isPpt(name)) return "ppt";
+        if (isOffice(name)) return "office";
+        if (isText(name)) return "text";
+        return "";
+    }
+
+    private static final int EXCEL_MAX_ROWS = 1000;
+    private static final int EXCEL_MAX_COLS = 50;
+    private static final int PPT_MAX_SLIDES = 80;
+    private static final long PPT_MAX_BYTES = 40L * 1024 * 1024;
+    private static final double PPT_SCALE = 1.6;
+    private static final Set<String> TEXT_EXTS = Set.of(
+            "txt", "md", "markdown", "log", "html", "htm", "css", "js", "mjs", "cjs", "ts", "tsx",
+            "jsx", "vue", "json", "xml", "yml", "yaml", "ini", "conf", "cfg", "properties", "env",
+            "sql", "sh", "bash", "bat", "cmd", "ps1", "py", "java", "go", "rs", "c", "cpp", "h",
+            "hpp", "cs", "php", "rb", "swift", "kt", "scala", "r", "lua", "toml", "csv", "tsv",
+            "srt", "vtt", "diff", "patch", "gitignore"
+    );
+    private static final Set<String> TEXT_NAMES = Set.of("dockerfile", "makefile", "license", "readme");
 
     private String stripExt(String name) {
         int i = name.lastIndexOf('.');

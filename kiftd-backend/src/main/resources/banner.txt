@@ -1,0 +1,16 @@
+${AnsiColor.BRIGHT_BLUE}
+
+888    d8P       8888888      8888888888      88888888888      8888888b.
+888   d8P          888        888                 888          888  "Y88b
+888  d8P           888        888                 888          888    888
+888d88K            888        8888888             888          888    888
+8888888b           888        888                 888          888    888
+888  Y88b          888        888                 888          888    888
+888   Y88b         888        888                 888          888  .d88P
+888    Y88b      8888888      888                 888          8888888P"
+
+
+${AnsiColor.BRIGHT_GREEN}
+Powered by dxa
+Spring Boot Version: ${spring-boot.version}${spring-boot.formatted-version}
+${AnsiColor.BLACK}

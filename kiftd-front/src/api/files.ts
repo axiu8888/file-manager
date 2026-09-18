@@ -170,6 +170,37 @@ export async function getVideo(fileId: string) {
   return data.data
 }
 
+export async function getVideos(fileId: string) {
+  const { data } = await http.get<ApiResponse<{ videoViewList: { fileId: string; fileName: string }[]; index: number }>>(
+    '/preview/videos',
+    { params: { fileId } },
+  )
+  return data.data
+}
+
+export async function getSiblings(fileId: string) {
+  const { data } = await http.get<ApiResponse<{ items: { fileId: string; fileName: string }[]; index: number; category: string }>>(
+    '/preview/siblings',
+    { params: { fileId } },
+  )
+  return data.data
+}
+
+export async function getExcel(fileId: string) {
+  const { data } = await http.get<
+    ApiResponse<{ fileName: string; sheets: { name: string; rows: string[][]; truncated: boolean }[] }>
+  >('/preview/excel', { params: { fileId } })
+  return data.data
+}
+
+export async function getPpt(fileId: string) {
+  const { data } = await http.get<ApiResponse<{ fileName: string; slides: { index: number; title: string }[] }>>(
+    '/preview/ppt',
+    { params: { fileId } },
+  )
+  return data.data
+}
+
 export async function getTranscodeStatus(fileId: string) {
   const { data } = await http.get<ApiResponse<string>>('/preview/transcode-status', { params: { fileId } })
   return data.data

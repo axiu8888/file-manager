@@ -1,5 +1,6 @@
 package com.kiftd.webdav;
 
+import com.kiftd.aop.HttpLoggingIgnore;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -7,6 +8,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
+@HttpLoggingIgnore
 @RestController
 public class WebDavController {
 

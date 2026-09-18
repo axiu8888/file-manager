@@ -16,4 +16,12 @@ public final class FileDtos {
     public record PictureViewList(List<PictureInfo> pictureViewList, int index) {}
     public record AudioInfo(String fileId, String fileName, String url, String artist, String lrc) {}
     public record VideoInfo(String fileId, String fileName, boolean needTranscode) {}
+    public record VideoItem(String fileId, String fileName) {}
+    public record VideoViewList(List<VideoItem> videoViewList, int index) {}
+    public record SiblingItem(String fileId, String fileName) {}
+    public record SiblingViewList(List<SiblingItem> items, int index, String category) {}
+    public record ExcelSheet(String name, List<List<String>> rows, boolean truncated) {}
+    public record ExcelPreview(String fileName, List<ExcelSheet> sheets) {}
+    public record PptSlide(int index, String title) {}
+    public record PptPreview(String fileName, List<PptSlide> slides) {}
 }

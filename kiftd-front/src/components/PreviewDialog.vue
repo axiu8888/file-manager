@@ -16,10 +16,12 @@
 
     <template #default="{ immersive }">
       <div class="preview-body" :class="{ 'is-immersive': immersive, 'is-video': type === 'video' }">
-        <div v-if="loading" class="preview-status">加载中…</div>
-        <div v-if="error" class="preview-status error">{{ error }}</div>
+        <div class="preview-with-list">
+          <div class="preview-main-pane">
+            <div v-if="loading" class="preview-status">加载中…</div>
+            <div v-if="error" class="preview-status error">{{ error }}</div>
 
-        <div v-if="type === 'pdf' && !error" class="preview-pdf">
+            <div v-if="type === 'pdf' && !error" class="preview-pdf">
           <div v-show="!immersive" class="epub-toolbar">
             <el-button size="small" @click="togglePdfToc">{{ pdfTocOpen ? '隐藏目录' : '目录' }}</el-button>
             <span v-if="pdfChapterLabel" class="epub-chapter">{{ pdfChapterLabel }}</span>
@@ -77,17 +79,96 @@
           </div>
         </div>
 
-        <video
-          v-if="!loading && !error && type === 'video' && videoSrc"
-          :key="`video-${fileId}`"
-          ref="videoRef"
-          class="preview-video"
-          :src="videoSrc"
-          controls
-          playsinline
-          preload="metadata"
-          controlslist="nodownload"
-        />
+        <div v-if="type === 'video' && !error" class="preview-video-layout">
+          <div class="preview-video-stage">
+            <video
+              v-if="!loading && videoSrc"
+              :key="`video-${currentFileId}`"
+              ref="videoRef"
+              class="preview-video"
+              :src="videoSrc"
+              controls
+              playsinline
+              preload="metadata"
+              controlslist="nodownload"
+            />
+          </div>
+        </div>
+
+        <div v-if="!loading && !error && type === 'excel'" class="preview-excel">
+          <div v-if="!excelSheets.length" class="excel-empty">工作簿为空</div>
+          <template v-else>
+            <div class="excel-tabs">
+              <button
+                v-for="(sheet, i) in excelSheets"
+                :key="`${sheet.name}-${i}`"
+                type="button"
+                class="excel-tab"
+                :class="{ active: i === excelSheetIndex }"
+                :title="sheet.name"
+                @click="excelSheetIndex = i"
+              >
+                {{ sheet.name }}
+              </button>
+            </div>
+            <div v-if="currentExcelSheet?.truncated" class="excel-hint">仅预览前 1000 行 × 50 列，完整内容请下载</div>
+            <div class="excel-grid-wrap">
+              <table v-if="currentExcelSheet && excelColCount" class="excel-grid">
+                <thead>
+                  <tr>
+                    <th class="excel-corner"></th>
+                    <th v-for="c in excelColCount" :key="`c-${c}`">{{ excelColLabel(c - 1) }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, r) in currentExcelSheet.rows" :key="`r-${r}`">
+                    <th>{{ r + 1 }}</th>
+                    <td v-for="c in excelColCount" :key="`r-${r}-c-${c}`">{{ row[c - 1] ?? '' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else class="excel-empty">此工作表为空</div>
+            </div>
+          </template>
+        </div>
+
+        <div v-if="!loading && !error && type === 'ppt'" class="preview-ppt">
+          <div v-if="!pptSlides.length" class="excel-empty">演示文稿为空</div>
+          <template v-else>
+            <div class="ppt-toolbar">
+              <el-button size="small" :disabled="pptIndex <= 0" @click="pptPrev">上一页</el-button>
+              <span class="ppt-page">{{ pptIndex + 1 }} / {{ pptSlides.length }}</span>
+              <el-button size="small" :disabled="pptIndex >= pptSlides.length - 1" @click="pptNext">下一页</el-button>
+              <span v-if="currentPptSlide?.title" class="ppt-slide-title">{{ currentPptSlide.title }}</span>
+            </div>
+            <div class="ppt-stage">
+              <div v-if="pptImgLoading" class="preview-status">渲染中…</div>
+              <div v-if="pptImgError" class="preview-status error">{{ pptImgError }}</div>
+              <img
+                v-if="currentPptSlide"
+                :key="`ppt-${currentFileId}-${pptIndex}`"
+                class="ppt-slide-img"
+                :src="pptSlideSrc(pptIndex)"
+                :alt="currentPptSlide.title"
+                @load="pptImgLoading = false"
+                @error="onPptImgError"
+              />
+            </div>
+            <div v-if="pptSlides.length > 1" class="ppt-thumbs">
+              <button
+                v-for="s in pptSlides"
+                :key="s.index"
+                type="button"
+                class="ppt-thumb"
+                :class="{ active: s.index === pptIndex }"
+                :title="s.title"
+                @click="goPpt(s.index)"
+              >
+                {{ s.index + 1 }}
+              </button>
+            </div>
+          </template>
+        </div>
 
         <div v-if="!loading && !error && type === 'text'" class="preview-text">
           <iframe
@@ -125,6 +206,17 @@
 
           <pre v-else class="text-pre"><code>{{ textContent }}</code></pre>
         </div>
+          </div>
+          <SiblingPlaylist
+            v-model:open="listOpen"
+            :items="siblings"
+            :active-id="currentFileId"
+            :immersive="immersive"
+            :tone="type === 'video' ? 'dark' : 'light'"
+            :title="listTitle"
+            @select="openSibling"
+          />
+        </div>
       </div>
     </template>
   </AppWindow>
@@ -138,7 +230,9 @@ import { PDFDocument } from 'pdf-lib'
 import { marked } from 'marked'
 import { useAuthStore } from '@/stores/auth'
 import AppWindow from '@/components/AppWindow.vue'
+import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
+import { getSiblings, getExcel, getPpt } from '@/api/files'
 
 // Vite: use bundled worker
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -151,7 +245,7 @@ marked.setOptions({
   breaks: true,
 })
 
-export type PreviewType = 'pdf' | 'epub' | 'video' | 'text'
+export type PreviewType = 'pdf' | 'epub' | 'video' | 'text' | 'excel' | 'ppt'
 
 const props = defineProps<{
   modelValue: boolean
@@ -171,10 +265,24 @@ const error = ref('')
 const pdfSrc = ref('')
 const videoSrc = ref('')
 const videoRef = ref<HTMLVideoElement | null>(null)
+const siblings = ref<SiblingItem[]>([])
+const listOpen = ref(true)
+const currentFileId = ref('')
+const playingName = ref('')
 const epubViewerRef = ref<HTMLElement | null>(null)
 const textContent = ref('')
 const textMode = ref<'plain' | 'markdown' | 'html'>('plain')
 const mdLayout = ref<'source' | 'preview' | 'split'>('split')
+const excelSheets = ref<{ name: string; rows: string[][]; truncated: boolean }[]>([])
+const excelSheetIndex = ref(0)
+const pptSlides = ref<{ index: number; title: string }[]>([])
+const pptIndex = ref(0)
+const pptImgLoading = ref(false)
+const pptImgError = ref('')
+
+const currentExcelSheet = computed(() => excelSheets.value[excelSheetIndex.value] || null)
+const excelColCount = computed(() => currentExcelSheet.value?.rows[0]?.length || 0)
+const currentPptSlide = computed(() => pptSlides.value[pptIndex.value] || null)
 
 const TEXT_MAX_BYTES = 5 * 1024 * 1024
 
@@ -245,9 +353,23 @@ interface PdfTocItem {
 }
 
 const displayTitle = computed(() => {
-  const name = fixMojibake((props.title || '').trim())
+  const raw = playingName.value || props.title
+  const name = fixMojibake((raw || '').trim())
   return name || '预览'
 })
+
+const listTitle = computed(() => {
+  if (props.type === 'video') return '播放列表'
+  if (props.type === 'epub') return '书籍列表'
+  if (props.type === 'pdf') return props.kind === 'office' ? '文档列表' : 'PDF 列表'
+  if (props.type === 'excel') return '表格列表'
+  if (props.type === 'ppt') return '演示列表'
+  return '文件列表'
+})
+
+function activeId() {
+  return currentFileId.value || props.fileId
+}
 
 function fixMojibake(text: string): string {
   if (!text) return ''
@@ -311,7 +433,7 @@ function stopVideo() {
     }
   }
   // 兜底：停掉页面里误挂载的同资源媒体（例如旧的隐藏 iframe/幽灵 video）
-  const id = props.fileId
+  const id = activeId()
   if (!id) return
   document.querySelectorAll('video, audio').forEach((el) => {
     const media = el as HTMLMediaElement
@@ -333,7 +455,7 @@ function stopVideo() {
   })
 }
 
-function cleanup() {
+function resetViewer() {
   window.removeEventListener('keydown', onKey)
   stopVideo()
   const viewer = epubViewerRef.value
@@ -366,8 +488,6 @@ function cleanup() {
   }
   pdfSrc.value = ''
   videoSrc.value = ''
-  error.value = ''
-  loading.value = false
   bookTitle.value = ''
   chapterLabel.value = ''
   tocItems.value = []
@@ -383,9 +503,25 @@ function cleanup() {
   textContent.value = ''
   textMode.value = 'plain'
   mdLayout.value = 'split'
+  excelSheets.value = []
+  excelSheetIndex.value = 0
+  pptSlides.value = []
+  pptIndex.value = 0
+  pptImgLoading.value = false
+  pptImgError.value = ''
   if (epubViewerRef.value) {
     epubViewerRef.value.innerHTML = ''
   }
+}
+
+function cleanup() {
+  resetViewer()
+  error.value = ''
+  loading.value = false
+  siblings.value = []
+  currentFileId.value = ''
+  playingName.value = ''
+  listOpen.value = true
 }
 
 function onClosed() {
@@ -502,9 +638,10 @@ async function goToc(item: TocItem) {
 
 function pdfApiPath() {
   const kind = props.kind || 'pdf'
-  if (kind === 'txt') return `/api/preview/txt-pdf/${props.fileId}`
-  if (kind === 'office') return `/api/preview/office-pdf/${props.fileId}`
-  return `/api/preview/pdf/${props.fileId}`
+  const id = activeId()
+  if (kind === 'txt') return `/api/preview/txt-pdf/${id}`
+  if (kind === 'office') return `/api/preview/office-pdf/${id}`
+  return `/api/preview/pdf/${id}`
 }
 
 async function authFetch(url: string) {
@@ -631,8 +768,56 @@ async function loadPdf() {
 
 async function loadVideo() {
   const token = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
+  const id = activeId()
   // 与 PDF iframe 分离，避免隐藏 iframe 同时拉视频并出声
-  videoSrc.value = `/api/preview/resource/${props.fileId}${token}`
+  videoSrc.value = `/api/preview/resource/${id}${token}`
+}
+
+async function loadSiblings() {
+  currentFileId.value = props.fileId
+  playingName.value = props.title
+  try {
+    const data = await getSiblings(props.fileId)
+    siblings.value = data.items || []
+    const current =
+      siblings.value.find((v) => v.fileId === props.fileId) || siblings.value[data.index] || siblings.value[0]
+    if (current) {
+      currentFileId.value = current.fileId
+      playingName.value = current.fileName
+    }
+  } catch {
+    siblings.value = props.fileId ? [{ fileId: props.fileId, fileName: props.title }] : []
+  }
+  listOpen.value = siblings.value.length > 1
+}
+
+async function loadCurrentContent(seq: number) {
+  if (props.type === 'pdf') await loadPdf()
+  else if (props.type === 'video') await loadVideo()
+  else if (props.type === 'epub') await loadEpub(seq)
+  else if (props.type === 'text') await loadText()
+  else if (props.type === 'excel') await loadExcel()
+  else if (props.type === 'ppt') await loadPpt()
+}
+
+async function openSibling(item: SiblingItem) {
+  if (!item?.fileId || item.fileId === currentFileId.value) return
+  const seq = ++loadSeq
+  resetViewer()
+  currentFileId.value = item.fileId
+  playingName.value = item.fileName
+  loading.value = true
+  error.value = ''
+  try {
+    await loadCurrentContent(seq)
+    if (seq !== loadSeq) return
+    loading.value = false
+    if (props.type === 'video') await playVideoOnce()
+  } catch (e: any) {
+    if (e?.message === 'cancelled' || seq !== loadSeq) return
+    loading.value = false
+    error.value = e?.message || '打开失败'
+  }
 }
 
 async function playVideoOnce() {
@@ -648,7 +833,7 @@ async function playVideoOnce() {
 }
 
 async function loadEpub(seq: number) {
-  const res = await authFetch(`/api/preview/resource/${props.fileId}`)
+  const res = await authFetch(`/api/preview/resource/${activeId()}`)
   const buf = await res.arrayBuffer()
   if (!buf || buf.byteLength < 100) {
     throw new Error('EPUB 文件无效或为空')
@@ -801,9 +986,25 @@ function epubNext() {
   turnEpub(1)
 }
 function onKey(e: KeyboardEvent) {
-  if (props.type !== 'epub' || epubFlow !== 'paginated') return
   const tag = (e.target as HTMLElement | null)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (props.type === 'ppt') {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault()
+      pptPrev()
+    } else if (
+      e.key === 'ArrowRight' ||
+      e.key === 'ArrowDown' ||
+      e.key === 'PageDown' ||
+      e.key === ' ' ||
+      e.key === 'Spacebar'
+    ) {
+      e.preventDefault()
+      pptNext()
+    }
+    return
+  }
+  if (props.type !== 'epub' || epubFlow !== 'paginated') return
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
     e.preventDefault()
     epubPrev()
@@ -820,14 +1021,64 @@ function onKey(e: KeyboardEvent) {
 }
 
 async function loadText() {
-  const res = await authFetch(`/api/preview/resource/${props.fileId}`)
+  const res = await authFetch(`/api/preview/resource/${activeId()}`)
   const buf = await res.arrayBuffer()
   if (!buf.byteLength) throw new Error('文件内容为空')
   if (buf.byteLength > TEXT_MAX_BYTES) {
     throw new Error('文件过大（超过 5MB），请下载后查看')
   }
-  textMode.value = detectTextMode(props.title || '')
+  textMode.value = detectTextMode(playingName.value || props.title || '')
   textContent.value = decodeTextBytes(buf)
+}
+
+function excelColLabel(index: number) {
+  let n = index
+  let label = ''
+  while (n >= 0) {
+    label = String.fromCharCode((n % 26) + 65) + label
+    n = Math.floor(n / 26) - 1
+  }
+  return label
+}
+
+async function loadExcel() {
+  const data = await getExcel(activeId())
+  excelSheets.value = data?.sheets || []
+  excelSheetIndex.value = 0
+}
+
+function pptSlideSrc(index: number) {
+  const token = auth.token ? `?token=${encodeURIComponent(auth.token)}` : ''
+  return `/api/preview/ppt-slide/${activeId()}/${index}${token}`
+}
+
+function goPpt(index: number) {
+  if (index < 0 || index >= pptSlides.value.length || index === pptIndex.value) return
+  pptImgLoading.value = true
+  pptImgError.value = ''
+  pptIndex.value = index
+}
+
+function pptPrev() {
+  goPpt(pptIndex.value - 1)
+}
+
+function pptNext() {
+  goPpt(pptIndex.value + 1)
+}
+
+function onPptImgError() {
+  pptImgLoading.value = false
+  pptImgError.value = '幻灯片渲染失败'
+}
+
+async function loadPpt() {
+  const data = await getPpt(activeId())
+  pptSlides.value = data?.slides || []
+  pptIndex.value = 0
+  pptImgError.value = ''
+  pptImgLoading.value = pptSlides.value.length > 0
+  window.addEventListener('keydown', onKey)
 }
 
 async function load() {
@@ -837,10 +1088,8 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    if (props.type === 'pdf') await loadPdf()
-    else if (props.type === 'video') await loadVideo()
-    else if (props.type === 'epub') await loadEpub(seq)
-    else if (props.type === 'text') await loadText()
+    await loadSiblings()
+    await loadCurrentContent(seq)
   } catch (e: any) {
     if (e?.message === 'cancelled' || seq !== loadSeq) return
     console.error('preview failed', e)
@@ -885,12 +1134,41 @@ async function load() {
   position: relative;
   padding: 10px 12px 12px;
 }
+.preview-with-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  position: relative;
+}
+.preview-main-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
 .preview-body.is-immersive {
   padding: 0;
   background: #000;
 }
 .preview-body.is-immersive.is-video {
   background: #000;
+}
+.preview-body.is-video {
+  padding: 0;
+  background: #000;
+}
+.preview-body.is-video .preview-with-list,
+.preview-body.is-video .preview-main-pane {
+  background: #000;
+}
+.preview-body.is-video .preview-status {
+  background: rgba(0, 0, 0, 0.55);
+  color: #e5e7eb;
 }
 .preview-body.is-immersive .epub-main {
   border: 0;
@@ -908,6 +1186,28 @@ async function load() {
   min-height: 0;
   border: 0;
   background: #525659;
+}
+.preview-video-layout {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  position: relative;
+  background: #000;
+}
+.preview-video-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  background: #000;
+}
+.preview-video-stage .preview-status {
+  background: rgba(0, 0, 0, 0.55);
+  color: #e5e7eb;
 }
 .preview-video {
   background: #000;
@@ -1004,6 +1304,207 @@ async function load() {
 }
 .pdf-frame {
   border: 0;
+}
+.preview-excel {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+}
+.excel-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 6px 8px 0;
+  background: #f3f4f6;
+  border-bottom: 1px solid #d1d5db;
+}
+.excel-tab {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #4b5563;
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.excel-tab:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+.excel-tab.active {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #111827;
+  font-weight: 600;
+}
+.excel-hint {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #b45309;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+}
+.excel-grid-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+}
+.excel-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+.excel-grid {
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #111827;
+  min-width: 100%;
+}
+.excel-grid th,
+.excel-grid td {
+  border: 1px solid #d1d5db;
+  padding: 4px 8px;
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+.excel-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f3f4f6;
+  font-weight: 600;
+  text-align: center;
+  color: #4b5563;
+  min-width: 72px;
+}
+.excel-grid tbody th,
+.excel-grid .excel-corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #f3f4f6;
+  font-weight: 600;
+  text-align: center;
+  color: #6b7280;
+  min-width: 40px;
+  max-width: 48px;
+}
+.excel-grid .excel-corner {
+  z-index: 3;
+  left: 0;
+  top: 0;
+}
+.excel-grid tbody tr:nth-child(even) td {
+  background: #fafafa;
+}
+.preview-ppt {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #111827;
+}
+.ppt-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #1f2937;
+  color: #e5e7eb;
+}
+.ppt-page {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #d1d5db;
+  min-width: 64px;
+  text-align: center;
+}
+.ppt-slide-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #9ca3af;
+}
+.ppt-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 20px;
+  background: #111827;
+}
+.ppt-stage .preview-status {
+  background: rgba(17, 24, 39, 0.55);
+  color: #e5e7eb;
+}
+.ppt-stage .preview-status.error {
+  background: #111827;
+  color: #fca5a5;
+}
+.ppt-slide-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #fff;
+}
+.ppt-thumbs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 10px 10px;
+  background: #1f2937;
+}
+.ppt-thumb {
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 28px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background: #111827;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ppt-thumb:hover {
+  border-color: #6b7280;
+  color: #e5e7eb;
+}
+.ppt-thumb.active {
+  background: #134e4a;
+  border-color: #14b8a6;
+  color: #99f6e4;
+  font-weight: 600;
 }
 .preview-status {
   position: absolute;
