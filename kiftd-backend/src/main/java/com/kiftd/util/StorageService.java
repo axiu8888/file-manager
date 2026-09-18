@@ -25,8 +25,25 @@ public class StorageService {
 
     @PostConstruct
     public void init() throws IOException {
-        Files.createDirectories(root);
-        Files.createDirectories(temp);
+        ensureDirectory(root);
+        ensureDirectory(temp);
+    }
+
+    /**
+     * Docker/WSL 把 Windows 目录 bind 到容器后，路径往往已存在且不是标准 POSIX 目录。
+     * {@link Files#createDirectories} 内部用 NOFOLLOW_LINKS 判断，会误报 FileAlreadyExistsException。
+     */
+    private static void ensureDirectory(Path dir) throws IOException {
+        if (Files.isDirectory(dir)) {
+            return;
+        }
+        try {
+            Files.createDirectories(dir);
+        } catch (java.nio.file.FileAlreadyExistsException e) {
+            if (!Files.isDirectory(dir)) {
+                throw new IOException("路径已存在但不是目录: " + dir.toAbsolutePath(), e);
+            }
+        }
     }
 
     public String saveNewBlock(InputStream in) throws IOException {
