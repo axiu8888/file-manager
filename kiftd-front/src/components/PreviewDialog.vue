@@ -87,6 +87,17 @@
 
         <div v-if="type === 'video' && !error" class="preview-video-layout">
           <div class="preview-video-stage">
+            <div v-if="videoTranscodeHint" class="video-transcode-bar">
+              <span>{{ videoTranscodeHint }}</span>
+              <el-button
+                v-if="videoNeedTranscode && !videoTranscoding"
+                size="small"
+                type="primary"
+                @click="startVideoTranscode"
+              >
+                转码为 MP4
+              </el-button>
+            </div>
             <div v-show="!immersive && !loading && videoSrc" class="video-rate-bar">
               <span class="video-rate-label">倍速</span>
               <button
@@ -289,7 +300,8 @@ import { useAuthStore } from '@/stores/auth'
 import AppWindow from '@/components/AppWindow.vue'
 import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
-import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, saveTextContent } from '@/api/files'
+import { isTopmostWindow } from '@/utils/windowStack'
+import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, getTranscodeStatus, getVideo, saveTextContent } from '@/api/files'
 import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl, previewThumbUrl } from '@/api/urls'
 
 // Vite: use bundled worker
@@ -331,6 +343,10 @@ const videoSrc = ref('')
 const videoRef = ref<HTMLVideoElement | null>(null)
 const videoRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const
 const playbackRate = ref(1)
+const videoNeedTranscode = ref(false)
+const videoTranscoding = ref(false)
+const videoTranscodeHint = ref('')
+let videoTranscodeTimer: ReturnType<typeof setTimeout> | null = null
 const siblings = ref<SiblingItem[]>([])
 const listOpen = ref(true)
 const currentFileId = ref('')
@@ -529,6 +545,10 @@ function stopVideo() {
 
 function resetViewer() {
   window.removeEventListener('keydown', onKey)
+  stopVideoTranscodePoll()
+  videoNeedTranscode.value = false
+  videoTranscoding.value = false
+  videoTranscodeHint.value = ''
   stopVideo()
   const viewer = epubViewerRef.value
   if (viewer) {
@@ -851,9 +871,78 @@ async function loadPdf() {
 
 async function loadVideo() {
   const id = activeId()
-  // 与 PDF iframe 分离，避免隐藏 iframe 同时拉视频并出声
+  videoNeedTranscode.value = false
+  videoTranscoding.value = false
+  videoTranscodeHint.value = ''
+  stopVideoTranscodePoll()
+  try {
+    const info = await getVideo(id)
+    if (info.fileName) playingName.value = info.fileName
+    if (info.needTranscode) {
+      videoNeedTranscode.value = true
+      videoTranscodeHint.value =
+        '当前格式可能无法在浏览器直接播放。可转码为 MP4（会替换原文件，请确认已备份）。'
+      // 仍尝试直出，部分浏览器/容器可播
+    }
+  } catch (e: any) {
+    // getVideo 失败时仍尝试直链，避免整窗不可用
+    console.warn('getVideo failed', e)
+  }
   videoSrc.value = previewResourceUrl(id, auth.token)
   window.addEventListener('keydown', onKey)
+}
+
+function stopVideoTranscodePoll() {
+  if (videoTranscodeTimer) {
+    clearTimeout(videoTranscodeTimer)
+    videoTranscodeTimer = null
+  }
+}
+
+async function startVideoTranscode() {
+  const id = activeId()
+  if (!id || videoTranscoding.value) return
+  try {
+    await ElMessageBox.confirm(
+      '转码会用 MP4 替换当前存储文件（原扩展名也会改为 .mp4）。确定继续？',
+      '转码确认',
+      { type: 'warning', confirmButtonText: '开始转码', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  videoTranscoding.value = true
+  videoNeedTranscode.value = false
+  videoTranscodeHint.value = '转码中…'
+  await pollVideoTranscode(id)
+}
+
+async function pollVideoTranscode(fileId: string) {
+  stopVideoTranscodePoll()
+  try {
+    const status = await getTranscodeStatus(fileId)
+    if (status === 'FIN') {
+      videoTranscoding.value = false
+      videoNeedTranscode.value = false
+      videoTranscodeHint.value = '转码完成'
+      playingName.value = playingName.value.replace(/\.[^.]+$/, '.mp4')
+      videoSrc.value = previewResourceUrl(fileId, auth.token)
+      await playVideoOnce()
+      return
+    }
+    if (status === 'ERROR') {
+      videoTranscoding.value = false
+      videoNeedTranscode.value = true
+      videoTranscodeHint.value = '转码失败（请确认服务器已安装 ffmpeg）'
+      return
+    }
+    videoTranscodeHint.value = `转码中：${status}`
+    videoTranscodeTimer = setTimeout(() => void pollVideoTranscode(fileId), 1000)
+  } catch (e: any) {
+    videoTranscoding.value = false
+    videoNeedTranscode.value = true
+    videoTranscodeHint.value = e?.message || '转码状态查询失败'
+  }
 }
 
 async function loadSiblings() {
@@ -1125,6 +1214,7 @@ function epubNext() {
   turnEpub(1)
 }
 function onKey(e: KeyboardEvent) {
+  if (!isTopmostWindow(props.zIndex)) return
   if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
     if (props.type === 'text' && textEditing.value && canEditText.value) {
       e.preventDefault()
@@ -1417,6 +1507,19 @@ async function load() {
 .preview-video-stage .preview-status {
   background: rgba(0, 0, 0, 0.55);
   color: #e5e7eb;
+}
+.video-transcode-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(120, 53, 15, 0.92);
+  color: #fde68a;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.35);
+  z-index: 3;
 }
 .video-rate-bar {
   flex: 0 0 auto;

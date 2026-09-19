@@ -78,7 +78,7 @@ public class PreviewController {
     public ResponseEntity<byte[]> thumb(@PathVariable String fileId) {
         byte[] jpeg = previewService.thumbnailJpeg(fileId);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400")
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300, must-revalidate")
                 .contentType(MediaType.IMAGE_JPEG)
                 .body(jpeg);
     }
@@ -102,16 +102,29 @@ public class PreviewController {
     @GetMapping("/resource/{fileId}")
     public ResponseEntity<StreamingResponseBody> resource(@PathVariable String fileId,
                                                           HttpServletRequest request) throws IOException {
-        FileNode node = fileService.requireFile(fileId);
+        FileNode node = fileService.requireAccessibleFile(fileId);
         Path path = storageService.resolveBlock(node.getFilePath());
         long fileLength = Files.size(path);
         String contentType = probeContentType(node.getFileName());
         String range = request.getHeader(HttpHeaders.RANGE);
 
         if (range != null && range.startsWith("bytes=")) {
-            String[] parts = range.substring(6).split("-");
-            long start = Long.parseLong(parts[0]);
-            long end = parts.length > 1 && !parts[1].isEmpty() ? Long.parseLong(parts[1]) : fileLength - 1;
+            String[] parts = range.substring(6).split("-", 2);
+            long start;
+            long end;
+            try {
+                start = parts[0].isEmpty() ? 0 : Long.parseLong(parts[0]);
+                end = parts.length > 1 && !parts[1].isEmpty() ? Long.parseLong(parts[1]) : fileLength - 1;
+            } catch (NumberFormatException e) {
+                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                        .header(HttpHeaders.CONTENT_RANGE, "bytes */" + fileLength)
+                        .build();
+            }
+            if (fileLength == 0 || start < 0 || start >= fileLength || end < start) {
+                return ResponseEntity.status(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                        .header(HttpHeaders.CONTENT_RANGE, "bytes */" + fileLength)
+                        .build();
+            }
             if (end >= fileLength) {
                 end = fileLength - 1;
             }

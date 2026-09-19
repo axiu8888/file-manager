@@ -49,8 +49,18 @@ export async function getRemaining(fid: string, folderOffset: number, fileOffset
   return data.data
 }
 
-export async function createFolder(parentId: string, folderName: string, constraint = 0) {
-  const { data } = await http.post<ApiResponse<Folder>>(paths.folders.create, { parentId, folderName, constraint })
+export async function createFolder(
+  parentId: string,
+  folderName: string,
+  constraint = 0,
+  getOrCreate = false,
+) {
+  const { data } = await http.post<ApiResponse<Folder>>(paths.folders.create, {
+    parentId,
+    folderName,
+    constraint,
+    getOrCreate,
+  })
   return data.data
 }
 

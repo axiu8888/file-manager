@@ -39,7 +39,8 @@ public class FolderController {
 
     @PostMapping
     public ApiResponse<Folder> create(@RequestBody FolderDtos.NewFolderRequest req) {
-        return ApiResponse.ok(folderService.createFolder(req.parentId(), req.folderName(), req.constraint()));
+        boolean getOrCreate = Boolean.TRUE.equals(req.getOrCreate());
+        return ApiResponse.ok(folderService.createFolder(req.parentId(), req.folderName(), req.constraint(), getOrCreate));
     }
 
     @PutMapping("/{folderId}")

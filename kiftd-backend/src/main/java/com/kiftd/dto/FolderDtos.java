@@ -24,7 +24,7 @@ public final class FolderDtos {
 
     public record RemainingViewDto(List<Folder> folderList, List<FileNode> fileList) {}
 
-    public record NewFolderRequest(String parentId, String folderName, Integer constraint) {}
+    public record NewFolderRequest(String parentId, String folderName, Integer constraint, Boolean getOrCreate) {}
     public record RenameFolderRequest(String folderId, String newName, Integer constraint) {}
     public record FolderCountDto(long folderCount, long fileCount, String totalSize) {}
 }

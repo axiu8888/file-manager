@@ -110,13 +110,9 @@
   </Teleport>
 </template>
 
-<script lang="ts">
-/** 跨实例共享：Escape 只关闭 zIndex 最高的窗口 */
-const openWindowZs = new Map<symbol, number>()
-</script>
-
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { isTopmostWindow, registerWindowZ, unregisterWindowZ } from '@/utils/windowStack'
 
 type ResizeDir = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -246,18 +242,12 @@ function defaultGeometry() {
   restoreBox = { left: left.value, top: top.value, width: w, height: h }
 }
 
-function topmostZ() {
-  let max = 0
-  for (const z of openWindowZs.values()) max = Math.max(max, z)
-  return max
-}
-
 function registerOpen() {
-  openWindowZs.set(windowUid, props.zIndex || 0)
+  registerWindowZ(windowUid, props.zIndex || 0)
 }
 
 function unregisterOpen() {
-  openWindowZs.delete(windowUid)
+  unregisterWindowZ(windowUid)
 }
 
 function onWindowActivate() {
@@ -472,7 +462,7 @@ function endPointer() {
 function onKey(e: KeyboardEvent) {
   if (!props.modelValue) return
   // 多窗口并存时，快捷键只作用于最顶层
-  if ((props.zIndex || 0) < topmostZ()) return
+  if (!isTopmostWindow(props.zIndex)) return
   if (e.key === 'Escape') {
     if (document.fullscreenElement) {
       void document.exitFullscreen()
@@ -511,7 +501,7 @@ watch(
 watch(
   () => props.zIndex,
   (z) => {
-    if (props.modelValue) openWindowZs.set(windowUid, z || 0)
+    if (props.modelValue) registerWindowZ(windowUid, z || 0)
   },
 )
 

@@ -509,7 +509,7 @@ public class PreviewService {
     }
 
     public String transcodeStatus(String fileId) {
-        FileNode node = fileService.requireFile(fileId);
+        FileNode node = fileService.requireAccessibleFile(fileId);
         if (node.getFileName().toLowerCase(Locale.ROOT).endsWith(".mp4")) {
             return "FIN";
         }

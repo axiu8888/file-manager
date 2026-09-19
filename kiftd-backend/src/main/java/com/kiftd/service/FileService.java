@@ -60,6 +60,13 @@ public class FileService {
                 .orElseThrow(() -> new BizException("文件不存在"));
     }
 
+    /** 文件存在且当前用户对所在文件夹有访问权 */
+    public FileNode requireAccessibleFile(String fileId) {
+        FileNode node = requireFile(fileId);
+        folderService.checkAccess(folderService.requireFolder(node.getFileParentFolder()));
+        return node;
+    }
+
     public FileDtos.CheckUploadResponse checkUpload(String folderId, List<String> names) {
         SecurityUtils.requireAuth(AccountAuth.UPLOAD_FILES);
         Folder folder = folderService.requireFolder(folderId);
@@ -355,7 +362,7 @@ public class FileService {
         return out -> {
             try (ZipOutputStream zos = new ZipOutputStream(out)) {
                 for (String id : fileIds) {
-                    FileNode node = requireFile(id);
+                    FileNode node = requireAccessibleFile(id);
                     zos.putNextEntry(new ZipEntry(node.getFileName()));
                     Files.copy(storageService.resolveBlock(node.getFilePath()), zos);
                     zos.closeEntry();

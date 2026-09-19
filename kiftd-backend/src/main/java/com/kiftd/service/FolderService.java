@@ -45,12 +45,9 @@ public class FolderService {
 
     public void checkAccess(Folder folder) {
         int c = folder.getFolderConstraint() == null ? 0 : folder.getFolderConstraint();
-        UserPrincipal user = SecurityUtils.currentUserOrNull();
-        if (c >= 1 && user == null) {
+        // 约定：0 公开，≥1 需登录（文档未定义更严等级；旧的 c≥2 分支不可达）
+        if (c >= 1 && SecurityUtils.currentUserOrNull() == null) {
             throw new BizException(401, "mustLogin");
-        }
-        if (c >= 2 && user == null) {
-            throw new BizException(403, "notAccess");
         }
     }
 
@@ -118,17 +115,18 @@ public class FolderService {
     }
 
     /**
-     * Idempotent get-or-create for concurrent folder uploads.
-     * No outer {@code @Transactional}: catching {@link DataIntegrityViolationException}
-     * inside the same TX would mark the session rollback-only.
+     * @param getOrCreate true：同名则返回已有（目录上传幂等）；false：同名则报错（手动新建）
      */
-    public Folder createFolder(String parentId, String name, Integer constraint) {
+    public Folder createFolder(String parentId, String name, Integer constraint, boolean getOrCreate) {
         SecurityUtils.requireAuth(AccountAuth.CREATE_NEW_FOLDER);
         Folder parent = requireFolder(parentId);
         checkAccess(parent);
         var existing = folderRepository.findFirstByFolderParentAndFolderName(parentId, name);
         if (existing.isPresent()) {
-            return existing.get();
+            if (getOrCreate) {
+                return existing.get();
+            }
+            throw new BizException("文件夹名称已存在");
         }
         int c = constraint == null ? parent.getFolderConstraint() : constraint;
         if (c < parent.getFolderConstraint()) {
@@ -144,9 +142,17 @@ public class FolderService {
         try {
             return folderRepository.saveAndFlush(folder);
         } catch (DataIntegrityViolationException e) {
+            if (!getOrCreate) {
+                throw new BizException("文件夹名称已存在");
+            }
             return folderRepository.findFirstByFolderParentAndFolderName(parentId, name)
                     .orElseThrow(() -> e);
         }
+    }
+
+    /** 兼容旧调用：默认 get-or-create（目录上传） */
+    public Folder createFolder(String parentId, String name, Integer constraint) {
+        return createFolder(parentId, name, constraint, true);
     }
 
     @Transactional

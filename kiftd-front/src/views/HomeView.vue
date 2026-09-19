@@ -771,20 +771,26 @@ async function uploadDroppedFiles(files: Array<File & { webkitRelativePath?: str
     return
   }
   uploadProgress.value = 0
+  folderOverwriteDecision = null
   let ok = 0
+  let skip = 0
   try {
     for (let i = 0; i < files.length; i++) {
-      await uploadOneWithRelativePath(files[i])
-      ok++
+      const uploaded = await uploadOneWithRelativePath(files[i])
+      if (uploaded) ok++
+      else skip++
       uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
     }
-    ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`)
-    refresh()
+    if (ok && skip) ElMessage.success(`已上传 ${ok} 个，跳过 ${skip} 个同名`)
+    else if (ok) ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`)
+    else ElMessage.info('未上传文件（同名已跳过）')
+    if (ok > 0) refresh()
   } catch (e: any) {
     ElMessage.error(e.message || '上传失败')
     if (ok > 0) refresh()
   } finally {
     uploadProgress.value = -1
+    folderOverwriteDecision = null
   }
 }
 
@@ -849,6 +855,19 @@ async function uploadFilesBatch(files: File[]) {
 
 /** Shared across concurrent directory-upload requests to avoid duplicate createFolder races. */
 const folderPathCache = new Map<string, string>()
+/** 文件夹上传时「同名是否覆盖」只问一次：null 未问，true/false 已决定 */
+let folderOverwriteDecision: boolean | null = null
+
+async function askFolderOverwriteOnce() {
+  if (folderOverwriteDecision != null) return folderOverwriteDecision
+  folderOverwriteDecision = await ElMessageBox.confirm('文件夹中存在同名文件，是否覆盖？', '提示', {
+    confirmButtonText: '覆盖',
+    cancelButtonText: '跳过同名',
+  })
+    .then(() => true)
+    .catch(() => false)
+  return folderOverwriteDecision
+}
 
 async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: string }) {
   const rel = file.webkitRelativePath || file.name
@@ -863,12 +882,18 @@ async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: str
       parentId = cached
       continue
     }
-    const created = await createFolder(parentId, name, view.value!.folder.folderConstraint)
+    const created = await createFolder(parentId, name, view.value!.folder.folderConstraint, true)
     parentId = created.folderId
     folderPathCache.set(pathKey, parentId)
   }
   const check = await checkUpload(parentId, [file.name])
-  await uploadFile(parentId, file, check.uploadKey, true)
+  let overwrite = false
+  if (check.overlaps.length) {
+    overwrite = await askFolderOverwriteOnce()
+    if (!overwrite) return false
+  }
+  await uploadFile(parentId, file, check.uploadKey, overwrite)
+  return true
 }
 
 async function doUploadFolder(opt: UploadRequestOptions) {
@@ -877,6 +902,7 @@ async function doUploadFolder(opt: UploadRequestOptions) {
     await new Promise((r) => setTimeout(r, 200))
   }
   uploadBusy = true
+  folderOverwriteDecision = null
   try {
     const file = opt.file as File & { webkitRelativePath?: string }
     await uploadOneWithRelativePath(file)

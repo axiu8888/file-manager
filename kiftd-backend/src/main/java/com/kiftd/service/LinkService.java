@@ -44,7 +44,7 @@ public class LinkService {
     @Transactional
     public String createChain(String fileId) {
         SecurityUtils.requireAuth(AccountAuth.DOWNLOAD_FILES);
-        fileService.requireFile(fileId);
+        fileService.requireAccessibleFile(fileId);
         FileChain chain = new FileChain();
         chain.setChainKey(IdUtil.uuid());
         chain.setFileId(fileId);
@@ -56,7 +56,7 @@ public class LinkService {
     @Transactional
     public String createDownloadKey(String fileId) {
         SecurityUtils.requireAuth(AccountAuth.DOWNLOAD_FILES);
-        fileService.requireFile(fileId);
+        fileService.requireAccessibleFile(fileId);
         DownloadKey key = new DownloadKey();
         key.setDownloadKey(IdUtil.uuid());
         key.setFileId(fileId);

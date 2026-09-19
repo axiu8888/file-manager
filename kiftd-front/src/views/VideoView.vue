@@ -26,8 +26,10 @@ import { useRoute } from 'vue-router'
 import { getTranscodeStatus, getVideo } from '@/api/files'
 import { previewResourceUrl } from '@/api/urls'
 import { bindVideoVolume } from '@/utils/mediaVolume'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const auth = useAuthStore()
 const fileId = route.params.fileId as string
 const fileName = ref('')
 const status = ref('')
@@ -41,13 +43,13 @@ async function poll() {
   fileName.value = info.fileName
   if (!info.needTranscode) {
     ready.value = true
-    src.value = previewResourceUrl(fileId)
+    src.value = previewResourceUrl(fileId, auth.token)
     return
   }
   status.value = await getTranscodeStatus(fileId)
   if (status.value === 'FIN') {
     ready.value = true
-    src.value = previewResourceUrl(fileId)
+    src.value = previewResourceUrl(fileId, auth.token)
     return
   }
   if (status.value === 'ERROR') {
