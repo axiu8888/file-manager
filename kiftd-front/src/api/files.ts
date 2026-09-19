@@ -218,15 +218,27 @@ export async function getOs() {
 }
 
 export async function getPictures(fileId: string) {
-  const { data } = await http.get<ApiResponse<{ pictureViewList: { fileId: string; fileName: string; url: string }[]; index: number }>>(
-    paths.preview.pictures,
-    { params: { fileId } },
-  )
+  const { data } = await http.get<
+    ApiResponse<{
+      pictureViewList: {
+        fileId: string
+        fileName: string
+        url: string
+        fileCreationDate?: string
+        fileSize?: string
+      }[]
+      index: number
+    }>
+  >(paths.preview.pictures, { params: { fileId } })
   return data.data
 }
 
 export async function getAudios(folderId: string) {
-  const { data } = await http.get<ApiResponse<{ fileId: string; fileName: string; url: string }[]>>(paths.preview.audios, {
+  const { data } = await http.get<
+    ApiResponse<
+      { fileId: string; fileName: string; url: string; fileCreationDate?: string; fileSize?: string }[]
+    >
+  >(paths.preview.audios, {
     params: { folderId },
   })
   return data.data
@@ -240,18 +252,23 @@ export async function getVideo(fileId: string) {
 }
 
 export async function getVideos(fileId: string) {
-  const { data } = await http.get<ApiResponse<{ videoViewList: { fileId: string; fileName: string }[]; index: number }>>(
-    paths.preview.videos,
-    { params: { fileId } },
-  )
+  const { data } = await http.get<
+    ApiResponse<{
+      videoViewList: { fileId: string; fileName: string; fileCreationDate?: string; fileSize?: string }[]
+      index: number
+    }>
+  >(paths.preview.videos, { params: { fileId } })
   return data.data
 }
 
 export async function getSiblings(fileId: string) {
-  const { data } = await http.get<ApiResponse<{ items: { fileId: string; fileName: string }[]; index: number; category: string }>>(
-    paths.preview.siblings,
-    { params: { fileId } },
-  )
+  const { data } = await http.get<
+    ApiResponse<{
+      items: { fileId: string; fileName: string; fileCreationDate?: string; fileSize?: string }[]
+      index: number
+      category: string
+    }>
+  >(paths.preview.siblings, { params: { fileId } })
   return data.data
 }
 

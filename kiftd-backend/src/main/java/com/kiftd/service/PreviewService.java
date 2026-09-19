@@ -5,6 +5,7 @@ import com.kiftd.config.KiftdProperties;
 import com.kiftd.dto.FileDtos;
 import com.kiftd.entity.FileNode;
 import com.kiftd.repository.FileNodeRepository;
+import com.kiftd.util.NaturalOrder;
 import com.kiftd.util.StorageService;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -56,19 +57,20 @@ public class PreviewService {
     public FileDtos.PictureViewList pictures(String fileId) {
         FileNode current = fileService.requireFile(fileId);
         folderService.checkAccess(folderService.requireFolder(current.getFileParentFolder()));
-        List<FileNode> files = fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(current.getFileParentFolder());
+        List<FileNode> files = listSameFolderNatural(current.getFileParentFolder()).stream()
+                .filter(f -> isImage(f.getFileName()))
+                .toList();
         List<FileDtos.PictureInfo> list = new ArrayList<>();
         int index = 0;
-        int i = 0;
-        for (FileNode f : files) {
-            if (isImage(f.getFileName())) {
-                if (f.getFileId().equals(fileId)) {
-                    index = i;
-                }
-                list.add(new FileDtos.PictureInfo(f.getFileId(), f.getFileName(),
-                        props.apiPath("/preview/resource/" + f.getFileId())));
-                i++;
+        for (int i = 0; i < files.size(); i++) {
+            FileNode f = files.get(i);
+            if (f.getFileId().equals(fileId)) {
+                index = i;
             }
+            list.add(new FileDtos.PictureInfo(f.getFileId(), f.getFileName(),
+                    props.apiPath("/preview/resource/" + f.getFileId()),
+                    nullToEmpty(f.getFileCreationDate()),
+                    nullToEmpty(f.getFileSize())));
         }
         return new FileDtos.PictureViewList(list, index);
     }
@@ -76,10 +78,12 @@ public class PreviewService {
     public List<FileDtos.AudioInfo> audios(String folderId) {
         folderService.checkAccess(folderService.requireFolder(folderId));
         List<FileDtos.AudioInfo> list = new ArrayList<>();
-        for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(folderId)) {
+        for (FileNode f : listSameFolderNatural(folderId)) {
             if (isAudio(f.getFileName())) {
                 list.add(new FileDtos.AudioInfo(f.getFileId(), f.getFileName(),
-                        props.apiPath("/preview/resource/" + f.getFileId()), "未知艺术家", ""));
+                        props.apiPath("/preview/resource/" + f.getFileId()), "未知艺术家", "",
+                        nullToEmpty(f.getFileCreationDate()),
+                        nullToEmpty(f.getFileSize())));
             }
         }
         return list;
@@ -95,17 +99,19 @@ public class PreviewService {
     public FileDtos.VideoViewList videos(String fileId) {
         FileNode current = fileService.requireFile(fileId);
         folderService.checkAccess(folderService.requireFolder(current.getFileParentFolder()));
+        List<FileNode> files = listSameFolderNatural(current.getFileParentFolder()).stream()
+                .filter(f -> isVideo(f.getFileName()))
+                .toList();
         List<FileDtos.VideoItem> list = new ArrayList<>();
         int index = 0;
-        int i = 0;
-        for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(current.getFileParentFolder())) {
-            if (isVideo(f.getFileName())) {
-                if (f.getFileId().equals(fileId)) {
-                    index = i;
-                }
-                list.add(new FileDtos.VideoItem(f.getFileId(), f.getFileName()));
-                i++;
+        for (int i = 0; i < files.size(); i++) {
+            FileNode f = files.get(i);
+            if (f.getFileId().equals(fileId)) {
+                index = i;
             }
+            list.add(new FileDtos.VideoItem(f.getFileId(), f.getFileName(),
+                    nullToEmpty(f.getFileCreationDate()),
+                    nullToEmpty(f.getFileSize())));
         }
         return new FileDtos.VideoViewList(list, index);
     }
@@ -116,21 +122,43 @@ public class PreviewService {
         String category = previewCategory(current.getFileName());
         List<FileDtos.SiblingItem> list = new ArrayList<>();
         int index = 0;
-        int i = 0;
         if (category.isEmpty()) {
-            list.add(new FileDtos.SiblingItem(current.getFileId(), current.getFileName()));
+            list.add(new FileDtos.SiblingItem(current.getFileId(), current.getFileName(),
+                    nullToEmpty(current.getFileCreationDate()),
+                    nullToEmpty(current.getFileSize())));
             return new FileDtos.SiblingViewList(list, 0, category);
         }
-        for (FileNode f : fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(current.getFileParentFolder())) {
-            if (category.equals(previewCategory(f.getFileName()))) {
-                if (f.getFileId().equals(fileId)) {
-                    index = i;
-                }
-                list.add(new FileDtos.SiblingItem(f.getFileId(), f.getFileName()));
-                i++;
+        List<FileNode> files = listSameFolderNatural(current.getFileParentFolder()).stream()
+                .filter(f -> category.equals(previewCategory(f.getFileName())))
+                .toList();
+        for (int i = 0; i < files.size(); i++) {
+            FileNode f = files.get(i);
+            if (f.getFileId().equals(fileId)) {
+                index = i;
             }
+            list.add(new FileDtos.SiblingItem(f.getFileId(), f.getFileName(),
+                    nullToEmpty(f.getFileCreationDate()),
+                    nullToEmpty(f.getFileSize())));
         }
         return new FileDtos.SiblingViewList(list, index, category);
+    }
+
+    /** 同目录文件：默认按创建时间倒序，同时间再按文件名自然序（与主列表一致）。 */
+    private List<FileNode> listSameFolderNatural(String folderId) {
+        List<FileNode> files = new ArrayList<>(
+                fileNodeRepository.findByFileParentFolderOrderByFileNameAsc(folderId));
+        files.sort((a, b) -> {
+            int cmp = nullToEmpty(b.getFileCreationDate()).compareTo(nullToEmpty(a.getFileCreationDate()));
+            if (cmp != 0) {
+                return cmp;
+            }
+            return NaturalOrder.compare(a.getFileName(), b.getFileName());
+        });
+        return files;
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     public FileDtos.ExcelPreview excelPreview(String fileId) {

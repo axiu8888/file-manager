@@ -259,6 +259,17 @@ function onWindowActivate() {
 function close() {
   minimized.value = false
   miniPlayer.value = false
+  // 关闭前先停媒体，避免画中画/异步退出时仍在出声
+  const el = props.fullscreenTarget?.()
+  if (el instanceof HTMLMediaElement) {
+    try {
+      el.pause()
+      el.removeAttribute('src')
+      el.load()
+    } catch {
+      /* ignore */
+    }
+  }
   if (document.pictureInPictureElement) {
     void document.exitPictureInPicture().catch(() => undefined)
   }

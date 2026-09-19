@@ -4,9 +4,26 @@
       <span>{{ title }} · {{ items.length }}</span>
       <button type="button" class="sib-toggle" title="收起" @click="open = false">收起</button>
     </div>
+    <div class="sib-sort">
+      <label class="sib-sort-field">
+        <span>排序</span>
+        <select v-model="sortBy" @change="commitSort">
+          <option value="date">时间</option>
+          <option value="name">名称</option>
+          <option value="size">大小</option>
+        </select>
+      </label>
+      <label class="sib-sort-field">
+        <span>顺序</span>
+        <select v-model="sortOrder" @change="commitSort">
+          <option value="desc">倒序</option>
+          <option value="asc">正序</option>
+        </select>
+      </label>
+    </div>
     <div ref="bodyRef" class="sib-body">
       <button
-        v-for="(item, i) in items"
+        v-for="(item, i) in sortedItems"
         :key="item.fileId"
         type="button"
         class="sib-item"
@@ -33,11 +50,21 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  loadSiblingSort,
+  saveSiblingSort,
+  sortSiblingItems,
+  type SiblingSortBy,
+  type SiblingSortOrder,
+  type SiblingSortState,
+} from '@/utils/siblingSort'
 
 export interface SiblingItem {
   fileId: string
   fileName: string
+  fileCreationDate?: string
+  fileSize?: string | number
   thumb?: string
 }
 
@@ -60,7 +87,22 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   select: [item: SiblingItem]
+  'sort-change': [state: SiblingSortState]
 }>()
+
+const initial = loadSiblingSort()
+const sortBy = ref<SiblingSortBy>(initial.by)
+const sortOrder = ref<SiblingSortOrder>(initial.order)
+
+const sortedItems = computed(() =>
+  sortSiblingItems(props.items, { by: sortBy.value, order: sortOrder.value }),
+)
+
+function commitSort() {
+  const state: SiblingSortState = { by: sortBy.value, order: sortOrder.value }
+  saveSiblingSort(state)
+  emit('sort-change', state)
+}
 
 const bodyRef = ref<HTMLElement | null>(null)
 
@@ -71,7 +113,7 @@ function scrollActive() {
   })
 }
 
-watch(() => [props.activeId, open.value, props.items.length], scrollActive)
+watch(() => [props.activeId, open.value, sortedItems.value.length], scrollActive)
 </script>
 
 <style scoped>
@@ -98,17 +140,56 @@ watch(() => [props.activeId, open.value, props.items.length], scrollActive)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 10px 12px 6px;
   font-size: 13px;
   font-weight: 600;
 }
 .sib.light .sib-head {
   color: #374151;
-  border-bottom: 1px solid #e5e7eb;
 }
 .sib.dark .sib-head {
   color: #f3f4f6;
+}
+.sib-sort {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+.sib.light .sib-sort {
+  border-bottom: 1px solid #e5e7eb;
+}
+.sib.dark .sib-sort {
   border-bottom: 1px solid #1f2937;
+}
+.sib-sort-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.sib.light .sib-sort-field { color: #6b7280; }
+.sib.dark .sib-sort-field { color: #9ca3af; }
+.sib-sort-field select {
+  width: 100%;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.sib.light .sib-sort-field select {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+}
+.sib.dark .sib-sort-field select {
+  border: 1px solid #374151;
+  background: #1f2937;
+  color: #e5e7eb;
 }
 .sib-toggle {
   border: 0;

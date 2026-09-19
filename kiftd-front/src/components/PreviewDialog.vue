@@ -282,6 +282,7 @@
             :tone="type === 'video' ? 'dark' : 'light'"
             :title="listTitle"
             @select="openSibling"
+            @sort-change="onSiblingSortChange"
           />
         </div>
       </div>
@@ -290,7 +291,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import ePub from 'epubjs'
 import * as pdfjs from 'pdfjs-dist'
 import { PDFDocument } from 'pdf-lib'
@@ -300,6 +301,7 @@ import { useAuthStore } from '@/stores/auth'
 import AppWindow from '@/components/AppWindow.vue'
 import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.vue'
 import { bindVideoVolume } from '@/utils/mediaVolume'
+import { loadSiblingSort, sortSiblingItems, type SiblingSortState } from '@/utils/siblingSort'
 import { isTopmostWindow } from '@/utils/windowStack'
 import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, getTranscodeStatus, getVideo, saveTextContent } from '@/api/files'
 import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl, previewThumbUrl } from '@/api/urls'
@@ -516,12 +518,17 @@ function stopVideo() {
   if (v) {
     try {
       v.pause()
+      v.removeAttribute('src')
+      v.load()
     } catch {
       /* ignore */
     }
   }
+  if (document.pictureInPictureElement) {
+    void document.exitPictureInPicture().catch(() => undefined)
+  }
   // 兜底：停掉页面里误挂载的同资源媒体（例如旧的隐藏 iframe/幽灵 video）
-  const id = activeId()
+  const id = activeId() || props.fileId
   if (!id) return
   document.querySelectorAll('video, audio').forEach((el) => {
     const media = el as HTMLMediaElement
@@ -623,8 +630,15 @@ function onClosed() {
   cleanup()
 }
 
+onBeforeUnmount(() => {
+  // 父级直接 splice 会话时可能来不及走 @closed，这里兜底停声
+  cleanup()
+})
+
 async function onWindowVisible(open: boolean) {
   if (!open) {
+    // 先停媒体，再确认未保存文本，避免关闭瞬间仍在出声
+    if (props.type === 'video') stopVideo()
     const ok = await confirmDiscardIfDirty()
     if (!ok) return
   }
@@ -952,13 +966,18 @@ async function loadSiblings() {
     const data = await getSiblings(props.fileId)
     const cat = data.category || ''
     const withThumb = cat === 'image' || cat === 'video' || cat === 'pdf' || cat === 'ppt'
-    siblings.value = (data.items || []).map((item) => ({
-      fileId: item.fileId,
-      fileName: item.fileName,
-      thumb: withThumb ? previewThumbUrl(item.fileId, auth.token) : undefined,
-    }))
+    siblings.value = sortSiblingItems(
+      (data.items || []).map((item) => ({
+        fileId: item.fileId,
+        fileName: item.fileName,
+        fileCreationDate: item.fileCreationDate,
+        fileSize: item.fileSize,
+        thumb: withThumb ? previewThumbUrl(item.fileId, auth.token) : undefined,
+      })),
+      loadSiblingSort(),
+    )
     const current =
-      siblings.value.find((v) => v.fileId === props.fileId) || siblings.value[data.index] || siblings.value[0]
+      siblings.value.find((v) => v.fileId === props.fileId) || siblings.value[0]
     if (current) {
       currentFileId.value = current.fileId
       playingName.value = current.fileName
@@ -967,6 +986,16 @@ async function loadSiblings() {
     siblings.value = props.fileId ? [{ fileId: props.fileId, fileName: props.title }] : []
   }
   listOpen.value = siblings.value.length > 1
+}
+
+function onSiblingSortChange(state: SiblingSortState) {
+  const id = currentFileId.value
+  siblings.value = sortSiblingItems(siblings.value, state)
+  const current = siblings.value.find((v) => v.fileId === id)
+  if (current) {
+    currentFileId.value = current.fileId
+    playingName.value = current.fileName
+  }
 }
 
 async function loadCurrentContent(seq: number) {

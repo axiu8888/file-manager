@@ -116,7 +116,7 @@
         </div>
       </div>
 
-      <el-progress v-if="uploadProgress >= 0" :percentage="uploadProgress" style="margin:8px 0" />
+      <el-progress v-if="uploadProgress >= 0 && !uploadDialogVisible" :percentage="uploadProgress" style="margin:8px 0" />
 
       <el-table
         class="file-table"
@@ -208,6 +208,8 @@
       v-model="imgVisible"
       :title="currentPicture?.fileName || '图片预览'"
       :show-mask="false"
+      :z-index="imgWinZ"
+      @activate="onImgActivate"
       @closed="onImgClosed"
     >
       <template #title>
@@ -235,6 +237,7 @@
               tone="dark"
               title="图片列表"
               @select="onSelectPicture"
+              @sort-change="onPictureSortChange"
             />
           </div>
         </div>
@@ -245,22 +248,147 @@
       v-model="audioVisible"
       :title="currentAudio?.fileName || '音频播放'"
       :show-mask="false"
-      :initial-width="720"
-      :initial-height="420"
+      :initial-width="860"
+      :initial-height="520"
+      :z-index="audioWinZ"
+      @activate="onAudioActivate"
       @closed="onAudioClosed"
     >
+      <template #title>
+        <span class="preview-title">{{ currentAudio?.fileName || '音频播放' }}</span>
+      </template>
       <template #default="{ immersive }">
-        <div class="audio-preview-body">
+        <div class="audio-preview-body" :class="{ immersive }">
           <div class="audio-with-list">
             <div class="audio-main">
-              <div class="audio-now">{{ currentAudio?.fileName || '音频播放' }}</div>
+              <div class="audio-stage">
+                <div class="audio-disc" :class="{ playing: audioPlaying }">
+                  <div class="audio-disc-ring" aria-hidden="true" />
+                  <div class="audio-disc-core" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                      <path
+                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6zm-2 14a2 2 0 1 1 0-.01V17z"
+                      />
+                    </svg>
+                  </div>
+                </div>
+                <div class="audio-meta">
+                  <div class="audio-now" :title="currentAudio?.fileName">
+                    {{ audioDisplayName }}
+                  </div>
+                  <div class="audio-sub">
+                    {{ audioTrackLabel }}
+                    <span v-if="audioExt" class="audio-ext">{{ audioExt }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="audio-controls">
+                <div class="audio-time-row">
+                  <span>{{ formatAudioTime(audioCurrent) }}</span>
+                  <input
+                    class="audio-seek"
+                    type="range"
+                    min="0"
+                    :max="audioDuration || 0"
+                    step="0.1"
+                    :value="audioCurrent"
+                    :disabled="!currentAudio"
+                    @input="onAudioSeek"
+                  />
+                  <span>{{ formatAudioTime(audioDuration) }}</span>
+                </div>
+                <div class="audio-btn-row">
+                  <button
+                    type="button"
+                    class="audio-btn"
+                    title="上一首"
+                    :disabled="audioIndex <= 0"
+                    @click="audioPrev"
+                  >
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="audio-btn audio-btn-main"
+                    :title="audioPlaying ? '暂停' : '播放'"
+                    :disabled="!currentAudio"
+                    @click="toggleAudioPlay"
+                  >
+                    <svg v-if="!audioPlaying" viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+                      <path d="M8 5v14l11-7L8 5z" />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+                      <path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="audio-btn"
+                    title="下一首"
+                    :disabled="audioIndex >= audios.length - 1"
+                    @click="audioNext"
+                  >
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="audio-vol-row">
+                  <button
+                    type="button"
+                    class="audio-btn audio-btn-vol"
+                    :title="audioMuted || audioVolume <= 0 ? '取消静音' : '静音'"
+                    :disabled="!currentAudio"
+                    @click="toggleAudioMute"
+                  >
+                    <svg
+                      v-if="audioMuted || audioVolume <= 0"
+                      viewBox="0 0 24 24"
+                      width="18"
+                      height="18"
+                      fill="currentColor"
+                    >
+                      <path
+                        d="M16.5 12a4.5 4.5 0 0 0-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"
+                      />
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                      <path
+                        d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+                      />
+                    </svg>
+                  </button>
+                  <input
+                    class="audio-seek audio-vol"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    :value="audioMuted ? 0 : audioVolume"
+                    :disabled="!currentAudio"
+                    :title="`音量 ${Math.round((audioMuted ? 0 : audioVolume) * 100)}%`"
+                    @input="onAudioVolumeInput"
+                  />
+                  <span class="audio-vol-label">{{ Math.round((audioMuted ? 0 : audioVolume) * 100) }}%</span>
+                </div>
+              </div>
+
               <audio
                 v-if="currentAudio"
                 :key="currentAudio.fileId"
                 ref="audioRef"
+                class="audio-hidden"
                 :src="mediaSrc(currentAudio)"
-                controls
                 preload="metadata"
+                @timeupdate="onAudioTimeUpdate"
+                @loadedmetadata="onAudioMeta"
+                @play="onAudioPlay"
+                @pause="onAudioPause"
+                @ended="onAudioEnded"
+                @volumechange="syncAudioVolumeUi"
               />
             </div>
             <SiblingPlaylist
@@ -268,9 +396,10 @@
               :items="audioSiblings"
               :active-id="currentAudio?.fileId || ''"
               :immersive="immersive"
-              tone="light"
+              tone="dark"
               title="播放列表"
               @select="onSelectAudio"
+              @sort-change="onAudioSortChange"
             />
           </div>
         </div>
@@ -310,11 +439,41 @@
         <div class="thumb-pop-name" :title="thumbHover.name">{{ thumbHover.name }}</div>
       </div>
     </Teleport>
+
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="正在上传"
+      width="480px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+      append-to-body
+      align-center
+      class="upload-progress-dialog"
+    >
+      <div class="upload-dialog-body">
+        <div class="upload-dialog-meta">
+          <span>{{ uploadState.done }} / {{ uploadState.total }}</span>
+          <span>{{ uploadProgress >= 0 ? uploadProgress : 0 }}%</span>
+        </div>
+        <el-progress
+          :percentage="uploadProgress >= 0 ? uploadProgress : 0"
+          :stroke-width="14"
+          striped
+          striped-flow
+        />
+        <div class="upload-dialog-current" :title="uploadState.current">
+          <span class="upload-dialog-label">当前</span>
+          <span class="upload-dialog-file">{{ uploadState.current || '准备中…' }}</span>
+        </div>
+        <div v-if="uploadState.detail" class="upload-dialog-detail">{{ uploadState.detail }}</div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRequestOptions } from 'element-plus'
@@ -350,7 +509,9 @@ import {
 import { changePassword } from '@/api/auth'
 import { chainShareUrl, downloadKeyShareUrl, mediaSrc, previewThumbUrl } from '@/api/urls'
 import { useAuthStore } from '@/stores/auth'
-import { bindVideoVolume } from '@/utils/mediaVolume'
+import { bindVideoVolume, getCachedMuted, getCachedVideoVolume, setCachedVideoVolume } from '@/utils/mediaVolume'
+import { compareFileMeta, loadSiblingSort, sortSiblingItems, type SiblingSortState } from '@/utils/siblingSort'
+import { isTopmostWindow } from '@/utils/windowStack'
 import {
   Search,
   FolderAdd,
@@ -384,23 +545,56 @@ const keyword = ref('')
 const folderStats = ref<{ folderCount: number; fileCount: number; totalSize: string } | null>(null)
 const selected = ref<Row[]>([])
 const uploadProgress = ref(-1)
+const uploadDialogVisible = ref(false)
+const uploadState = ref({
+  total: 0,
+  done: 0,
+  current: '',
+  detail: '',
+})
 const dragOver = ref(false)
 let dragDepth = 0
 /** 防止拖拽/连点导致并发上传（并发时 Tomcat swallow 易连环报 size exceeded） */
 let uploadBusy = false
+
+function beginUploadProgress(total: number, detail = '') {
+  uploadState.value = { total, done: 0, current: '', detail }
+  uploadProgress.value = 0
+  uploadDialogVisible.value = true
+}
+
+function setUploadCurrent(name: string, done: number, detail = '') {
+  uploadState.value = {
+    ...uploadState.value,
+    current: name,
+    done,
+    detail: detail || uploadState.value.detail,
+  }
+}
+
+function endUploadProgress() {
+  uploadProgress.value = -1
+  uploadDialogVisible.value = false
+  uploadState.value = { total: 0, done: 0, current: '', detail: '' }
+}
 const openChangePwd = ref(false)
 const oldPwd = ref('')
 const newPwd = ref('')
 const imgVisible = ref(false)
 const imgIndex = ref(0)
 const imgListOpen = ref(true)
-const pictures = ref<{ fileId: string; fileName: string; url: string }[]>([])
+const imgWinZ = ref(3000)
+const pictures = ref<
+  { fileId: string; fileName: string; url: string; fileCreationDate?: string; fileSize?: string }[]
+>([])
 
 const currentPicture = computed(() => pictures.value[imgIndex.value] || null)
 const pictureSiblings = computed<SiblingItem[]>(() =>
   pictures.value.map((p) => ({
     fileId: p.fileId,
     fileName: p.fileName,
+    fileCreationDate: p.fileCreationDate,
+    fileSize: p.fileSize,
     thumb: previewThumbUrl(p.fileId, auth.token),
   })),
 )
@@ -408,6 +602,19 @@ const pictureSiblings = computed<SiblingItem[]>(() =>
 function onSelectPicture(item: SiblingItem) {
   const i = pictures.value.findIndex((p) => p.fileId === item.fileId)
   if (i >= 0) imgIndex.value = i
+}
+
+function onPictureSortChange(state: SiblingSortState) {
+  const id = currentPicture.value?.fileId
+  pictures.value = sortSiblingItems(pictures.value, state)
+  if (id) {
+    const i = pictures.value.findIndex((p) => p.fileId === id)
+    if (i >= 0) imgIndex.value = i
+  }
+}
+
+function onImgActivate() {
+  imgWinZ.value = ++previewZ
 }
 
 function onImgClosed() {
@@ -418,30 +625,283 @@ function onImgClosed() {
 const audioVisible = ref(false)
 const audioIndex = ref(0)
 const audioListOpen = ref(true)
+const audioWinZ = ref(3000)
 const audioRef = ref<HTMLAudioElement | null>(null)
-const audios = ref<{ fileId: string; fileName: string; url: string }[]>([])
+const audioPlaying = ref(false)
+const audioCurrent = ref(0)
+const audioDuration = ref(0)
+const audioVolume = ref(getCachedVideoVolume())
+const audioMuted = ref(getCachedMuted())
+const audios = ref<
+  { fileId: string; fileName: string; url: string; fileCreationDate?: string; fileSize?: string }[]
+>([])
 const currentAudio = computed(() => audios.value[audioIndex.value] || null)
 const audioSiblings = computed<SiblingItem[]>(() =>
-  audios.value.map((a) => ({ fileId: a.fileId, fileName: a.fileName })),
+  audios.value.map((a) => ({
+    fileId: a.fileId,
+    fileName: a.fileName,
+    fileCreationDate: a.fileCreationDate,
+    fileSize: a.fileSize,
+  })),
 )
+const audioDisplayName = computed(() => {
+  const name = currentAudio.value?.fileName || '未选择音频'
+  const i = name.lastIndexOf('.')
+  return i > 0 ? name.slice(0, i) : name
+})
+const audioExt = computed(() => {
+  const name = currentAudio.value?.fileName || ''
+  const i = name.lastIndexOf('.')
+  return i >= 0 ? name.slice(i + 1).toUpperCase() : ''
+})
+const audioTrackLabel = computed(() => {
+  if (!audios.value.length) return '播放列表为空'
+  return `第 ${audioIndex.value + 1} / ${audios.value.length} 首`
+})
+
+function formatAudioTime(sec: number) {
+  if (!Number.isFinite(sec) || sec < 0) return '0:00'
+  const s = Math.floor(sec)
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  return `${m}:${r.toString().padStart(2, '0')}`
+}
 
 function onSelectAudio(item: SiblingItem) {
   const i = audios.value.findIndex((a) => a.fileId === item.fileId)
   if (i >= 0) audioIndex.value = i
 }
 
-watch([currentAudio, audioVisible], async () => {
-  if (!audioVisible.value || !currentAudio.value) return
-  await nextTick()
-  bindVideoVolume(audioRef.value)
-  try {
-    await audioRef.value?.play()
-  } catch {
-    /* autoplay may be blocked */
+function onAudioSortChange(state: SiblingSortState) {
+  const id = currentAudio.value?.fileId
+  audios.value = sortSiblingItems(audios.value, state)
+  if (id) {
+    const i = audios.value.findIndex((a) => a.fileId === id)
+    if (i >= 0) audioIndex.value = i
   }
-})
+}
+
+function onAudioTimeUpdate() {
+  const el = audioRef.value
+  if (!el) return
+  audioCurrent.value = el.currentTime || 0
+}
+
+function onAudioMeta() {
+  const el = audioRef.value
+  if (!el) return
+  audioDuration.value = Number.isFinite(el.duration) ? el.duration : 0
+  audioCurrent.value = el.currentTime || 0
+}
+
+function onAudioPlay(e: Event) {
+  // 忽略旧 audio 节点卸载时的滞后事件
+  if (e.target !== audioRef.value) return
+  audioPlaying.value = true
+}
+
+function onAudioPause(e: Event) {
+  if (e.target !== audioRef.value) return
+  audioPlaying.value = false
+}
+
+function onAudioSeek(e: Event) {
+  const el = audioRef.value
+  if (!el) return
+  const v = Number((e.target as HTMLInputElement).value)
+  if (!Number.isFinite(v)) return
+  el.currentTime = v
+  audioCurrent.value = v
+}
+
+function syncAudioVolumeUi() {
+  const el = audioRef.value
+  if (!el) {
+    audioVolume.value = getCachedVideoVolume()
+    audioMuted.value = getCachedMuted()
+    return
+  }
+  audioVolume.value = el.volume
+  audioMuted.value = el.muted
+}
+
+function onAudioVolumeInput(e: Event) {
+  const el = audioRef.value
+  const v = Number((e.target as HTMLInputElement).value)
+  if (!Number.isFinite(v)) return
+  const next = Math.min(1, Math.max(0, v))
+  audioVolume.value = next
+  audioMuted.value = next <= 0
+  if (el) {
+    el.volume = next
+    el.muted = next <= 0
+  }
+  setCachedVideoVolume(next, next <= 0)
+}
+
+function toggleAudioMute() {
+  const el = audioRef.value
+  if (!el) return
+  if (el.muted || el.volume <= 0) {
+    const restore = audioVolume.value > 0 ? audioVolume.value : getCachedVideoVolume() || 0.5
+    el.muted = false
+    el.volume = restore
+    audioMuted.value = false
+    audioVolume.value = restore
+    setCachedVideoVolume(restore, false)
+  } else {
+    el.muted = true
+    audioMuted.value = true
+    setCachedVideoVolume(el.volume, true)
+  }
+}
+
+function seekAudioBy(deltaSec: number) {
+  const el = audioRef.value
+  if (!el) return
+  const duration = Number.isFinite(el.duration) ? el.duration : NaN
+  let next = (el.currentTime || 0) + deltaSec
+  if (Number.isFinite(duration) && duration > 0) {
+    next = Math.min(Math.max(0, next), Math.max(0, duration - 0.05))
+  } else {
+    next = Math.max(0, next)
+  }
+  try {
+    el.currentTime = next
+    audioCurrent.value = next
+  } catch {
+    /* ignore */
+  }
+}
+
+function changeAudioVolume(delta: number) {
+  const el = audioRef.value
+  if (!el) return
+  if (el.muted && delta > 0) {
+    el.muted = false
+    if (el.volume <= 0) el.volume = Math.min(1, delta)
+    syncAudioVolumeUi()
+    return
+  }
+  const next = Math.min(1, Math.max(0, el.volume + delta))
+  el.volume = next
+  el.muted = next === 0
+  syncAudioVolumeUi()
+}
+
+function onAudioActivate() {
+  audioWinZ.value = ++previewZ
+}
+
+function onMediaHotkey(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement | null)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+  if (audioVisible.value && isTopmostWindow(audioWinZ.value)) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      seekAudioBy(e.shiftKey ? -30 : -5)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      seekAudioBy(e.shiftKey ? 30 : 5)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      changeAudioVolume(e.shiftKey ? 0.1 : 0.05)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      changeAudioVolume(e.shiftKey ? -0.1 : -0.05)
+    } else if (e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault()
+      void toggleAudioPlay()
+    }
+    return
+  }
+
+  if (imgVisible.value && isTopmostWindow(imgWinZ.value)) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (imgIndex.value > 0) imgIndex.value -= 1
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (imgIndex.value < pictures.value.length - 1) imgIndex.value += 1
+    }
+  }
+}
+
+async function toggleAudioPlay() {
+  const el = audioRef.value
+  if (!el) return
+  if (el.paused) {
+    try {
+      await el.play()
+      audioPlaying.value = true
+    } catch {
+      /* ignore */
+    }
+  } else {
+    el.pause()
+    audioPlaying.value = false
+  }
+}
+
+function audioPrev() {
+  if (audioIndex.value > 0) audioIndex.value -= 1
+}
+
+function audioNext() {
+  if (audioIndex.value < audios.value.length - 1) audioIndex.value += 1
+}
+
+function onAudioEnded() {
+  if (audioIndex.value < audios.value.length - 1) {
+    audioIndex.value += 1
+    return
+  }
+  audioPlaying.value = false
+  audioCurrent.value = 0
+}
+
+function stopAudio() {
+  const el = audioRef.value
+  if (!el) return
+  try {
+    el.pause()
+    el.removeAttribute('src')
+    el.load()
+  } catch {
+    /* ignore */
+  }
+  audioPlaying.value = false
+  audioCurrent.value = 0
+  audioDuration.value = 0
+}
+
+watch(
+  [currentAudio, audioVisible],
+  async () => {
+    if (!audioVisible.value || !currentAudio.value) return
+    audioCurrent.value = 0
+    audioDuration.value = 0
+    await nextTick()
+    const el = audioRef.value
+    if (!el) return
+  bindVideoVolume(el)
+  syncAudioVolumeUi()
+  try {
+    await el.play()
+    // 显式同步按钮状态，避免旧节点 pause 事件覆盖
+    if (audioRef.value === el && !el.paused) {
+      audioPlaying.value = true
+    }
+  } catch {
+    if (audioRef.value === el) audioPlaying.value = false
+  }
+  },
+  { flush: 'post' },
+)
 
 function onAudioClosed() {
+  stopAudio()
   audios.value = []
   audioIndex.value = 0
   audioListOpen.value = true
@@ -474,8 +934,12 @@ function onPreviewVisible(sessionId: string, open: boolean) {
     previewSessions.value[idx].visible = true
     return
   }
-  // 关闭后移除，释放播放器/文档资源
-  previewSessions.value.splice(idx, 1)
+  // 先置 false 触发子组件清理，再移除会话，避免视频仍在后台播放
+  previewSessions.value[idx].visible = false
+  nextTick(() => {
+    const i = previewSessions.value.findIndex((p) => p.id === sessionId)
+    if (i >= 0) previewSessions.value.splice(i, 1)
+  })
 }
 
 function raisePreview(sessionId: string) {
@@ -533,19 +997,39 @@ const rows = computed<Row[]>(() => {
     date: f.fileCreationDate,
     raw: f,
   }))
-  return [...folders, ...files].sort((a, b) => sortByDate(b, a))
+  // 与播放列表默认规则一致：时间倒序，同时间名称自然序
+  return [...folders, ...files].sort((a, b) =>
+    compareFileMeta(
+      { fileName: a.name, fileCreationDate: a.date, fileSize: a.sizeBytes },
+      { fileName: b.name, fileCreationDate: b.date, fileSize: b.sizeBytes },
+      { by: 'date', order: 'desc' },
+    ),
+  )
 })
 
 function sortByName(a: Row, b: Row) {
-  return a.name.localeCompare(b.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
+  return compareFileMeta(
+    { fileName: a.name },
+    { fileName: b.name },
+    { by: 'name', order: 'asc' },
+  )
 }
 
 function sortBySize(a: Row, b: Row) {
-  return a.sizeBytes - b.sizeBytes
+  return compareFileMeta(
+    { fileName: a.name, fileSize: a.sizeBytes },
+    { fileName: b.name, fileSize: b.sizeBytes },
+    { by: 'size', order: 'asc' },
+  )
 }
 
 function sortByDate(a: Row, b: Row) {
-  return String(a.date || '').localeCompare(String(b.date || ''))
+  // el-table 会按 ascending/descending 再乘系数，这里始终返回正序比较结果
+  return compareFileMeta(
+    { fileName: a.name, fileCreationDate: a.date },
+    { fileName: b.name, fileCreationDate: b.date },
+    { by: 'date', order: 'asc' },
+  )
 }
 
 const selectedFiles = computed(() => selected.value.filter((r) => r.kind === 'file'))
@@ -690,7 +1174,7 @@ async function onDrop(e: DragEvent) {
   try {
     const files = await collectDroppedFiles(e.dataTransfer)
     if (!files.length) {
-      ElMessage.info('未识别到可上传的文件')
+      ElMessage.info('未识别到可上传的文件（空文件夹无法上传）')
       return
     }
     await uploadDroppedFiles(files)
@@ -761,121 +1245,28 @@ async function walkFsEntry(
   }
 }
 
-async function uploadDroppedFiles(files: Array<File & { webkitRelativePath?: string }>) {
-  const hasNested = files.some((f) => {
-    const rel = f.webkitRelativePath || ''
-    return rel.includes('/')
-  })
-  if (!hasNested) {
-    await uploadFilesBatch(files)
-    return
-  }
-  uploadProgress.value = 0
-  folderOverwriteDecision = null
-  let ok = 0
-  let skip = 0
-  try {
-    for (let i = 0; i < files.length; i++) {
-      const uploaded = await uploadOneWithRelativePath(files[i])
-      if (uploaded) ok++
-      else skip++
-      uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
-    }
-    if (ok && skip) ElMessage.success(`已上传 ${ok} 个，跳过 ${skip} 个同名`)
-    else if (ok) ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`)
-    else ElMessage.info('未上传文件（同名已跳过）')
-    if (ok > 0) refresh()
-  } catch (e: any) {
-    ElMessage.error(e.message || '上传失败')
-    if (ok > 0) refresh()
-  } finally {
-    uploadProgress.value = -1
-    folderOverwriteDecision = null
-  }
+function normalizeRelPath(rel: string) {
+  return (rel || '').replace(/\\/g, '/').replace(/^\/+/, '')
 }
 
-async function uploadFilesBatch(files: File[]) {
-  if (uploadBusy) {
-    ElMessage.warning('正在上传中，请稍候')
-    return
-  }
-  uploadBusy = true
-  const folderId = view.value!.folder.folderId
-  uploadProgress.value = 0
-  let ok = 0
-  let skip = 0
-  try {
-    const check = await checkUpload(
-      folderId,
-      files.map((f) => f.name),
-    )
-    let overwriteAll = false
-    let asked = false
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      const overlap = check.overlaps.includes(file.name)
-      let overwrite = false
-      if (overlap) {
-        if (!asked) {
-          asked = true
-          overwriteAll = await ElMessageBox.confirm(
-            `有 ${check.overlaps.length} 个同名文件，是否全部覆盖？`,
-            '提示',
-            { confirmButtonText: '覆盖', cancelButtonText: '跳过同名' },
-          )
-            .then(() => true)
-            .catch(() => false)
-        }
-        overwrite = overwriteAll
-        if (!overwrite) {
-          skip++
-          uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
-          continue
-        }
-      }
-      await uploadFile(folderId, file, check.uploadKey, overwrite, (p) => {
-        const base = (i / files.length) * 100
-        uploadProgress.value = Math.round(base + p / files.length)
-      })
-      ok++
-    }
-    if (ok > 0) {
-      ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件` + (skip ? `，跳过 ${skip} 个` : ''))
-      refresh()
-    } else if (skip > 0) {
-      ElMessage.info('已跳过全部同名文件')
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || '上传失败')
-  } finally {
-    uploadProgress.value = -1
-    uploadBusy = false
-  }
+function fileRelPath(file: File & { webkitRelativePath?: string }) {
+  return normalizeRelPath(file.webkitRelativePath || file.name)
+}
+
+function hasNestedPath(files: Array<File & { webkitRelativePath?: string }>) {
+  return files.some((f) => fileRelPath(f).includes('/'))
 }
 
 /** Shared across concurrent directory-upload requests to avoid duplicate createFolder races. */
 const folderPathCache = new Map<string, string>()
-/** 文件夹上传时「同名是否覆盖」只问一次：null 未问，true/false 已决定 */
-let folderOverwriteDecision: boolean | null = null
 
-async function askFolderOverwriteOnce() {
-  if (folderOverwriteDecision != null) return folderOverwriteDecision
-  folderOverwriteDecision = await ElMessageBox.confirm('文件夹中存在同名文件，是否覆盖？', '提示', {
-    confirmButtonText: '覆盖',
-    cancelButtonText: '跳过同名',
-  })
-    .then(() => true)
-    .catch(() => false)
-  return folderOverwriteDecision
-}
-
-async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: string }) {
-  const rel = file.webkitRelativePath || file.name
-  const parts = rel.split('/')
-  let parentId = view.value!.folder.folderId
-  let pathKey = parentId
-  for (let i = 0; i < parts.length - 1; i++) {
-    const name = parts[i]
+async function ensureFolderByRelPath(relDir: string): Promise<string> {
+  const rootId = view.value!.folder.folderId
+  if (!relDir) return rootId
+  const parts = relDir.split('/').filter(Boolean)
+  let parentId = rootId
+  let pathKey = rootId
+  for (const name of parts) {
     pathKey = `${pathKey}/${name}`
     const cached = folderPathCache.get(pathKey)
     if (cached) {
@@ -886,30 +1277,238 @@ async function uploadOneWithRelativePath(file: File & { webkitRelativePath?: str
     parentId = created.folderId
     folderPathCache.set(pathKey, parentId)
   }
-  const check = await checkUpload(parentId, [file.name])
-  let overwrite = false
-  if (check.overlaps.length) {
-    overwrite = await askFolderOverwriteOnce()
-    if (!overwrite) return false
-  }
-  await uploadFile(parentId, file, check.uploadKey, overwrite)
-  return true
+  return parentId
 }
 
-async function doUploadFolder(opt: UploadRequestOptions) {
-  // el-upload 会对每个文件并发调用；排队避免 Tomcat swallow 连环报错
-  while (uploadBusy) {
-    await new Promise((r) => setTimeout(r, 200))
+async function uploadDroppedFiles(files: Array<File & { webkitRelativePath?: string }>) {
+  if (!hasNestedPath(files)) {
+    await uploadFilesBatch(files)
+    return
+  }
+  await uploadTreeFiles(files)
+}
+
+/** 带相对路径的批量上传（拖文件夹 / 上传文件夹按钮） */
+async function uploadTreeFiles(files: Array<File & { webkitRelativePath?: string }>) {
+  if (!files.length) return
+  if (uploadBusy) {
+    ElMessage.warning('正在上传中，请稍候')
+    return
   }
   uploadBusy = true
-  folderOverwriteDecision = null
+  beginUploadProgress(files.length, '正在创建目录…')
+  let ok = 0
+  let skip = 0
+  let fail = 0
+  const errors: string[] = []
   try {
-    const file = opt.file as File & { webkitRelativePath?: string }
-    await uploadOneWithRelativePath(file)
+    // 1) 先建好所有目录
+    const dirSet = new Set<string>()
+    for (const f of files) {
+      const rel = fileRelPath(f)
+      const parts = rel.split('/')
+      if (parts.length > 1) {
+        dirSet.add(parts.slice(0, -1).join('/'))
+      }
+    }
+    const dirs = [...dirSet].sort((a, b) => a.localeCompare(b))
+    for (let di = 0; di < dirs.length; di++) {
+      setUploadCurrent(dirs[di], 0, `正在创建目录… (${di + 1}/${dirs.length})`)
+      await ensureFolderByRelPath(dirs[di])
+    }
+
+    // 2) 按目标文件夹分组
+    setUploadCurrent('', 0, '正在检查同名文件…')
+    const groups = new Map<string, Array<File & { webkitRelativePath?: string }>>()
+    for (const f of files) {
+      const rel = fileRelPath(f)
+      const parts = rel.split('/')
+      const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : ''
+      const parentId = await ensureFolderByRelPath(dir)
+      const list = groups.get(parentId) || []
+      list.push(f)
+      groups.set(parentId, list)
+    }
+
+    // 3) 预先汇总同名，只询问一次
+    let overwriteAll = false
+    let asked = false
+    let totalOverlap = 0
+    const overlapByFolder = new Map<string, Set<string>>()
+    for (const [parentId, list] of groups) {
+      const names = list.map((f) => {
+        const parts = fileRelPath(f).split('/')
+        return parts[parts.length - 1]
+      })
+      const check = await checkUpload(parentId, names)
+      const set = new Set(check.overlaps || [])
+      overlapByFolder.set(parentId, set)
+      totalOverlap += set.size
+    }
+    if (totalOverlap > 0) {
+      asked = true
+      uploadDialogVisible.value = false
+      overwriteAll = await ElMessageBox.confirm(
+        `有 ${totalOverlap} 个同名文件，是否全部覆盖？`,
+        '提示',
+        { confirmButtonText: '覆盖', cancelButtonText: '跳过同名', closeOnClickModal: false },
+      )
+        .then(() => true)
+        .catch(() => false)
+      uploadDialogVisible.value = true
+    }
+
+    // 4) 逐组上传；单文件失败不中断整批
+    let done = 0
+    const total = files.length
+    setUploadCurrent('', 0, '正在上传文件…')
+    for (const [parentId, list] of groups) {
+      const names = list.map((f) => {
+        const parts = fileRelPath(f).split('/')
+        return parts[parts.length - 1]
+      })
+      const check = await checkUpload(parentId, names)
+      const overlaps = overlapByFolder.get(parentId) || new Set(check.overlaps || [])
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i]
+        const rel = fileRelPath(file)
+        const parts = rel.split('/')
+        const name = parts[parts.length - 1]
+        const overlap = overlaps.has(name)
+        if (overlap && asked && !overwriteAll) {
+          skip++
+          done++
+          setUploadCurrent(rel, done, `已跳过同名 · 成功 ${ok} / 失败 ${fail}`)
+          uploadProgress.value = Math.round((done / total) * 100)
+          continue
+        }
+        setUploadCurrent(rel, done, `上传中 · 成功 ${ok} / 失败 ${fail}`)
+        try {
+          await uploadFile(parentId, file, check.uploadKey, overlap && overwriteAll, (p) => {
+            const base = (done / total) * 100
+            uploadProgress.value = Math.round(base + p / total)
+          })
+          ok++
+        } catch (e: any) {
+          fail++
+          const msg = e?.message || '上传失败'
+          if (errors.length < 3) errors.push(`${name}: ${msg}`)
+        }
+        done++
+        setUploadCurrent(rel, done, `上传中 · 成功 ${ok} / 失败 ${fail}`)
+        uploadProgress.value = Math.round((done / total) * 100)
+      }
+    }
+
+    if (ok && (skip || fail)) {
+      ElMessage.success(`已上传 ${ok} 个` + (skip ? `，跳过 ${skip} 个` : '') + (fail ? `，失败 ${fail} 个` : ''))
+    } else if (ok) {
+      ElMessage.success(ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`)
+    } else if (skip && !fail) {
+      ElMessage.info('已跳过全部同名文件')
+    } else if (fail) {
+      ElMessage.error(errors[0] || '上传失败')
+    }
+    if (ok > 0) refresh()
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+    if (ok > 0) refresh()
   } finally {
+    endUploadProgress()
     uploadBusy = false
   }
-  refresh()
+}
+
+async function uploadFilesBatch(files: File[]) {
+  if (uploadBusy) {
+    ElMessage.warning('正在上传中，请稍候')
+    return
+  }
+  uploadBusy = true
+  const folderId = view.value!.folder.folderId
+  beginUploadProgress(files.length, '正在检查同名文件…')
+  let ok = 0
+  let skip = 0
+  let fail = 0
+  const errors: string[] = []
+  try {
+    const check = await checkUpload(
+      folderId,
+      files.map((f) => f.name),
+    )
+    let overwriteAll = false
+    let asked = false
+    const overlaps = new Set(check.overlaps || [])
+    if (overlaps.size > 0) {
+      asked = true
+      uploadDialogVisible.value = false
+      overwriteAll = await ElMessageBox.confirm(
+        `有 ${overlaps.size} 个同名文件，是否全部覆盖？`,
+        '提示',
+        { confirmButtonText: '覆盖', cancelButtonText: '跳过同名', closeOnClickModal: false },
+      )
+        .then(() => true)
+        .catch(() => false)
+      uploadDialogVisible.value = true
+    }
+    setUploadCurrent('', 0, '正在上传文件…')
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const overlap = overlaps.has(file.name)
+      if (overlap && asked && !overwriteAll) {
+        skip++
+        setUploadCurrent(file.name, i + 1, `已跳过同名 · 成功 ${ok} / 失败 ${fail}`)
+        uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
+        continue
+      }
+      setUploadCurrent(file.name, i, `上传中 · 成功 ${ok} / 失败 ${fail}`)
+      try {
+        await uploadFile(folderId, file, check.uploadKey, overlap && overwriteAll, (p) => {
+          const base = (i / files.length) * 100
+          uploadProgress.value = Math.round(base + p / files.length)
+        })
+        ok++
+      } catch (e: any) {
+        fail++
+        const msg = e?.message || '上传失败'
+        if (errors.length < 3) errors.push(`${file.name}: ${msg}`)
+      }
+      setUploadCurrent(file.name, i + 1, `上传中 · 成功 ${ok} / 失败 ${fail}`)
+      uploadProgress.value = Math.round(((i + 1) / files.length) * 100)
+    }
+    if (ok > 0) {
+      ElMessage.success(
+        (ok === 1 ? '上传成功' : `已上传 ${ok} 个文件`) +
+          (skip ? `，跳过 ${skip} 个` : '') +
+          (fail ? `，失败 ${fail} 个` : ''),
+      )
+      refresh()
+    } else if (skip > 0 && !fail) {
+      ElMessage.info('已跳过全部同名文件')
+    } else if (fail) {
+      ElMessage.error(errors[0] || '上传失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    endUploadProgress()
+    uploadBusy = false
+  }
+}
+
+/** el-upload webkitdirectory 会并发回调，先攒齐再统一上传 */
+const folderUploadBuffer: Array<File & { webkitRelativePath?: string }> = []
+let folderUploadFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+function doUploadFolder(opt: UploadRequestOptions) {
+  const file = opt.file as File & { webkitRelativePath?: string }
+  folderUploadBuffer.push(file)
+  if (folderUploadFlushTimer) clearTimeout(folderUploadFlushTimer)
+  folderUploadFlushTimer = setTimeout(() => {
+    folderUploadFlushTimer = null
+    const batch = folderUploadBuffer.splice(0)
+    void uploadTreeFiles(batch)
+  }, 200)
 }
 
 async function download(row: Row) {
@@ -1141,18 +1740,58 @@ async function preview(row: Row) {
   if (row.kind !== 'file') return
   const name = row.name
   if (isImage(name)) {
-    const p = await getPictures(row.id)
-    pictures.value = p.pictureViewList || []
-    imgIndex.value = Math.min(Math.max(p.index || 0, 0), Math.max(pictures.value.length - 1, 0))
+    // 优先用主列表同一份 fileList，保证时间/大小字段与排序一致
+    let list = (view.value?.fileList || [])
+      .filter((f) => isImage(f.fileName))
+      .map((f) => ({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        url: '',
+        fileCreationDate: f.fileCreationDate || '',
+        fileSize: f.fileSize || '',
+      }))
+    if (!list.some((x) => x.fileId === row.id)) {
+      const p = await getPictures(row.id)
+      list = (p.pictureViewList || []).map((f) => ({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        url: f.url || '',
+        fileCreationDate: f.fileCreationDate || '',
+        fileSize: f.fileSize || '',
+      }))
+    }
+    pictures.value = sortSiblingItems(list, loadSiblingSort())
+    const idx = pictures.value.findIndex((x) => x.fileId === row.id)
+    imgIndex.value = idx >= 0 ? idx : 0
+    imgWinZ.value = ++previewZ
     imgVisible.value = true
     imgListOpen.value = pictures.value.length > 1
     return
   }
   if (isAudio(name)) {
-    audios.value = await getAudios(view.value!.folder.folderId)
+    let list = (view.value?.fileList || [])
+      .filter((f) => isAudio(f.fileName))
+      .map((f) => ({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        url: '',
+        fileCreationDate: f.fileCreationDate || '',
+        fileSize: f.fileSize || '',
+      }))
+    if (!list.some((x) => x.fileId === row.id)) {
+      list = (await getAudios(view.value!.folder.folderId)).map((f) => ({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        url: f.url || '',
+        fileCreationDate: f.fileCreationDate || '',
+        fileSize: f.fileSize || '',
+      }))
+    }
+    audios.value = sortSiblingItems(list, loadSiblingSort())
     const idx = audios.value.findIndex((a) => a.fileId === row.id)
     audioIndex.value = idx >= 0 ? idx : 0
     audioListOpen.value = audios.value.length > 1
+    audioWinZ.value = ++previewZ
     audioVisible.value = true
     return
   }
@@ -1218,9 +1857,14 @@ async function submitChangePwd() {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', onMediaHotkey)
   osInfo.value = await getOs().catch(() => '获取失败')
   notice.value = await getNotice().catch(() => '')
   refresh()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onMediaHotkey)
 })
 </script>
 
@@ -1522,6 +2166,42 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.upload-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 8px;
+}
+.upload-dialog-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #4b5563;
+  font-variant-numeric: tabular-nums;
+}
+.upload-dialog-current {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.upload-dialog-label {
+  flex-shrink: 0;
+  color: #6b7280;
+}
+.upload-dialog-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111827;
+  font-weight: 500;
+}
+.upload-dialog-detail {
+  font-size: 12px;
+  color: #6b7280;
+}
 .icon-folder { color: #e6a23c; }
 .icon-image { color: #67c23a; }
 .icon-video { color: #409eff; }
@@ -1687,6 +2367,13 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   display: flex;
+  background:
+    radial-gradient(1200px 420px at 20% -10%, rgba(15, 118, 110, 0.35), transparent 55%),
+    radial-gradient(900px 380px at 90% 110%, rgba(30, 64, 175, 0.22), transparent 50%),
+    linear-gradient(160deg, #0f172a 0%, #111827 48%, #0b1220 100%);
+}
+.audio-preview-body.immersive {
+  background: #000;
 }
 .audio-with-list {
   flex: 1;
@@ -1701,18 +2388,190 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 16px;
-  padding: 28px 32px;
+  gap: 28px;
+  padding: 32px 36px;
+  color: #e5e7eb;
+}
+.audio-stage {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-width: 0;
+}
+.audio-disc {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #334155 0%, #0f172a 42%, #020617 70%),
+    conic-gradient(from 210deg, #134e4a, #1e3a8a, #0f766e, #134e4a);
+  box-shadow:
+    0 18px 40px rgba(2, 6, 23, 0.55),
+    inset 0 0 0 1px rgba(148, 163, 184, 0.25);
+}
+.audio-disc.playing {
+  animation: audio-spin 8s linear infinite;
+}
+.audio-disc-ring {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: inset 0 0 0 10px rgba(15, 23, 42, 0.35);
+}
+.audio-disc-core {
+  position: absolute;
+  inset: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #99f6e4;
+  background: radial-gradient(circle at 40% 35%, #1f2937, #020617 70%);
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.35);
+}
+.audio-meta {
+  min-width: 0;
+  flex: 1;
 }
 .audio-now {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: 22px;
+  line-height: 1.3;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.audio-main audio {
+.audio-sub {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.audio-ext {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  color: #cbd5e1;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.audio-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.audio-time-row {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+.audio-seek {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.28);
+  outline: none;
+  cursor: pointer;
+}
+.audio-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #5eead4;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.18);
+  cursor: pointer;
+}
+.audio-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #5eead4;
+  cursor: pointer;
+}
+.audio-btn-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+}
+.audio-btn {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #e2e8f0;
+  background: rgba(148, 163, 184, 0.14);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+.audio-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.24);
+  color: #fff;
+}
+.audio-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.audio-btn-main {
+  width: 64px;
+  height: 64px;
+  color: #042f2e;
+  background: linear-gradient(160deg, #5eead4, #14b8a6 55%, #0f766e);
+  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.35);
+}
+.audio-btn-main:hover:not(:disabled) {
+  color: #022c22;
+  background: linear-gradient(160deg, #99f6e4, #2dd4bf 55%, #0d9488);
+  transform: translateY(-1px);
+}
+.audio-vol-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 42px;
+  gap: 10px;
+  align-items: center;
+}
+.audio-btn-vol {
+  width: 40px;
+  height: 40px;
+}
+.audio-vol-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.audio-hidden {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+@keyframes audio-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
