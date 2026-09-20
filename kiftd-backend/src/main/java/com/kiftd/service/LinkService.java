@@ -11,6 +11,7 @@ import com.kiftd.util.ContentDispositionUtil;
 import com.kiftd.util.IdUtil;
 import com.kiftd.util.SecurityUtils;
 import com.kiftd.util.StorageService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 @Service
+@Slf4j
 public class LinkService {
 
     private final FileChainRepository fileChainRepository;

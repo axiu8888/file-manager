@@ -57,8 +57,8 @@ kiftd:
     secret: kiftd-dev-secret-change-me-to-a-long-random-string-at-least-256-bits
     expire-hours: 72
   storage:
-    root: ./data/filenodes
-    temp: ./data/temp
+    root: /opt/app/data/filenodes
+    temp: /opt/app/data/temp
   signup:
     enabled: true
   ffmpeg:
@@ -73,6 +73,13 @@ kiftd:
   webdav:
     enabled: true
     path: /webdav/*
+  backup:
+    enabled: true
+    dir: /opt/app/data/backup
+    # Spring cron：秒 分 时 日 月 周，每天 01:00
+    cron: "0 30 22 * * ?"
+    zone: Asia/Shanghai
+    keep-days: 30
   http-logging:
     enabled: true
     multi-line: true

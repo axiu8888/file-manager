@@ -4,9 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Data;
 
 @Entity
 @Table(name = "file_node")
+@Data
 public class FileNode {
 
     @Id
@@ -31,18 +33,4 @@ public class FileNode {
     @Column(name = "file_path", nullable = false, length = 512)
     private String filePath;
 
-    public String getFileId() { return fileId; }
-    public void setFileId(String fileId) { this.fileId = fileId; }
-    public String getFileName() { return fileName; }
-    public void setFileName(String fileName) { this.fileName = fileName; }
-    public String getFileSize() { return fileSize; }
-    public void setFileSize(String fileSize) { this.fileSize = fileSize; }
-    public String getFileParentFolder() { return fileParentFolder; }
-    public void setFileParentFolder(String fileParentFolder) { this.fileParentFolder = fileParentFolder; }
-    public String getFileCreationDate() { return fileCreationDate; }
-    public void setFileCreationDate(String fileCreationDate) { this.fileCreationDate = fileCreationDate; }
-    public String getFileCreator() { return fileCreator; }
-    public void setFileCreator(String fileCreator) { this.fileCreator = fileCreator; }
-    public String getFilePath() { return filePath; }
-    public void setFilePath(String filePath) { this.filePath = filePath; }
 }

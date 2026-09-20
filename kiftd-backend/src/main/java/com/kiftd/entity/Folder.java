@@ -1,10 +1,7 @@
 package com.kiftd.entity;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
+import lombok.Data;
 
 @Entity
 @Table(
@@ -14,6 +11,7 @@ import jakarta.persistence.UniqueConstraint;
                 columnNames = {"folder_parent", "folder_name"}
         )
 )
+@Data
 public class Folder {
 
     @Id
@@ -35,16 +33,4 @@ public class Folder {
     @Column(name = "folder_constraint", nullable = false)
     private Integer folderConstraint = 0;
 
-    public String getFolderId() { return folderId; }
-    public void setFolderId(String folderId) { this.folderId = folderId; }
-    public String getFolderName() { return folderName; }
-    public void setFolderName(String folderName) { this.folderName = folderName; }
-    public String getFolderCreationDate() { return folderCreationDate; }
-    public void setFolderCreationDate(String folderCreationDate) { this.folderCreationDate = folderCreationDate; }
-    public String getFolderCreator() { return folderCreator; }
-    public void setFolderCreator(String folderCreator) { this.folderCreator = folderCreator; }
-    public String getFolderParent() { return folderParent; }
-    public void setFolderParent(String folderParent) { this.folderParent = folderParent; }
-    public Integer getFolderConstraint() { return folderConstraint; }
-    public void setFolderConstraint(Integer folderConstraint) { this.folderConstraint = folderConstraint; }
 }

@@ -14,7 +14,8 @@ public record KiftdProperties(
         Admin admin,
         int selectStep,
         Webdav webdav,
-        @DefaultValue("/api") String apiPrefix
+        @DefaultValue("/api") String apiPrefix,
+        Backup backup
 ) {
     public record Jwt(String secret, long expireHours) {}
     public record Storage(String root, String temp) {}
@@ -23,6 +24,13 @@ public record KiftdProperties(
     public record Cors(String allowedOrigins) {}
     public record Admin(String username, String password) {}
     public record Webdav(boolean enabled, String path) {}
+    public record Backup(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("./data/backup") String dir,
+            @DefaultValue("0 0 1 * * ?") String cron,
+            @DefaultValue("Asia/Shanghai") String zone,
+            @DefaultValue("30") int keepDays
+    ) {}
 
     public String normalizedApiPrefix() {
         String raw = apiPrefix == null ? "/api" : apiPrefix.trim();
@@ -44,5 +52,9 @@ public record KiftdProperties(
             path = "/" + path;
         }
         return normalizedApiPrefix() + path;
+    }
+
+    public Backup backupOrDefault() {
+        return backup != null ? backup : new Backup(true, "./data/backup", "0 0 1 * * ?", "Asia/Shanghai", 30);
     }
 }

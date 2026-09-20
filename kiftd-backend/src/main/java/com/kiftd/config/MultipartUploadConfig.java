@@ -1,8 +1,7 @@
 package com.kiftd.config;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.coyote.http11.AbstractHttp11Protocol;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.web.servlet.MultipartProperties;
@@ -16,9 +15,8 @@ import org.springframework.util.unit.DataSize;
  * 保证大文件上传限制生效，并在启动日志打印实际值便于排查。
  */
 @Configuration
+@Slf4j
 public class MultipartUploadConfig {
-
-    private static final Logger log = LoggerFactory.getLogger(MultipartUploadConfig.class);
 
     @Bean
     ApplicationRunner logMultipartLimits(MultipartProperties multipartProperties) {

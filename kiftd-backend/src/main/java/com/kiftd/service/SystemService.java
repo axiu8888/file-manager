@@ -2,6 +2,7 @@ package com.kiftd.service;
 
 import com.kiftd.entity.Propertie;
 import com.kiftd.repository.PropertieRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,6 +12,7 @@ import java.util.HexFormat;
 import java.util.Map;
 
 @Service
+@Slf4j
 public class SystemService {
 
     private final PropertieRepository propertieRepository;

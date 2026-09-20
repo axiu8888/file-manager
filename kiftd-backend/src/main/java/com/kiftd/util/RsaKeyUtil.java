@@ -1,14 +1,14 @@
 package com.kiftd.util;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
+import javax.crypto.Cipher;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.Base64;
-import javax.crypto.Cipher;
 
 @Component
 public class RsaKeyUtil {

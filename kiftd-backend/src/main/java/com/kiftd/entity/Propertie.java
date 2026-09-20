@@ -4,9 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Data;
 
 @Entity
 @Table(name = "properties")
+@Data
 public class Propertie {
 
     @Id
@@ -16,8 +18,4 @@ public class Propertie {
     @Column(name = "propertie_value", columnDefinition = "TEXT")
     private String propertieValue;
 
-    public String getPropertieKey() { return propertieKey; }
-    public void setPropertieKey(String propertieKey) { this.propertieKey = propertieKey; }
-    public String getPropertieValue() { return propertieValue; }
-    public void setPropertieValue(String propertieValue) { this.propertieValue = propertieValue; }
 }

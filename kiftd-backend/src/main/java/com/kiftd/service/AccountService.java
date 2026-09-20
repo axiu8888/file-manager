@@ -11,6 +11,7 @@ import com.kiftd.util.CaptchaService;
 import com.kiftd.util.IdUtil;
 import com.kiftd.util.RsaKeyUtil;
 import com.kiftd.util.SecurityUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Base64;
 
 @Service
+@Slf4j
 public class AccountService {
 
     private final AccountRepository accountRepository;

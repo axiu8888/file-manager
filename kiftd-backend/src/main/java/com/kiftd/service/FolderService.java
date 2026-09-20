@@ -12,6 +12,7 @@ import com.kiftd.security.UserPrincipal;
 import com.kiftd.util.IdUtil;
 import com.kiftd.util.SecurityUtils;
 import com.kiftd.util.StorageService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import java.util.Collections;
 import java.util.List;
 
 @Service
+@Slf4j
 public class FolderService {
 
     private final FolderRepository folderRepository;

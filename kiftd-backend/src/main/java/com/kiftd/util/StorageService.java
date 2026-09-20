@@ -1,9 +1,9 @@
 package com.kiftd.util;
 
 import com.kiftd.config.KiftdProperties;
+import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
-import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
