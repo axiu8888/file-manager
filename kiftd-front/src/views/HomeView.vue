@@ -506,7 +506,7 @@ import {
   type Folder,
   type FolderView,
 } from '@/api/files'
-import { changePassword } from '@/api/auth'
+import { changePassword, fetchMe } from '@/api/auth'
 import { chainShareUrl, downloadKeyShareUrl, mediaSrc, previewThumbUrl } from '@/api/urls'
 import { useAuthStore } from '@/stores/auth'
 import { bindVideoVolume, getCachedMuted, getCachedVideoVolume, setCachedVideoVolume } from '@/utils/mediaVolume'
@@ -1067,6 +1067,10 @@ async function refresh(fid?: string) {
     }
     view.value = v
     localStorage.setItem('folder_id', v.folder.folderId)
+    // 同步服务端识别到的账号权限；不因 account 为空就强制登出（浏览接口本身允许匿名）
+    if (v.account) {
+      auth.setSession(auth.token || localStorage.getItem('kiftd_token') || '', v.account, v.authList || auth.auth)
+    }
     thumbFailed.value = new Set()
     if (v.foldersOffset > v.selectStep || v.filesOffset > v.selectStep) {
       const rem = await getRemaining(v.folder.folderId, Math.min(v.selectStep, v.folderList.length), Math.min(v.selectStep, v.fileList.length))
@@ -1131,7 +1135,12 @@ async function onFilesPicked(e: Event) {
   const files = Array.from(input.files || [])
   input.value = ''
   if (!files.length || !view.value) return
-  await uploadFilesBatch(files)
+  try {
+    await ensureUploadSession()
+    await uploadFilesBatch(files)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '上传失败')
+  }
 }
 
 function isFileDrag(e: DragEvent) {
@@ -1158,6 +1167,23 @@ function onDragLeave(e: DragEvent) {
   if (dragDepth === 0) dragOver.value = false
 }
 
+async function ensureUploadSession() {
+  if (!auth.isLogin) {
+    throw new Error('请先登录后再上传')
+  }
+  try {
+    const me = await fetchMe()
+    if (me?.account) {
+      auth.setSession(auth.token, me.account, me.auth || auth.auth)
+    }
+  } catch (e: any) {
+    throw new Error(e?.message || '登录状态无效，请重新登录后再上传')
+  }
+  if (!auth.hasAuth('UPLOAD_FILES')) {
+    throw new Error('当前账号没有上传权限')
+  }
+}
+
 async function onDrop(e: DragEvent) {
   e.preventDefault()
   dragDepth = 0
@@ -1171,12 +1197,20 @@ async function onDrop(e: DragEvent) {
     ElMessage.warning('正在上传中，请稍候再拖入')
     return
   }
+  // 必须先同步取出拖拽文件：任何 await 之后 DataTransfer 会被浏览器清空
+  let files: Array<File & { webkitRelativePath?: string }> = []
   try {
-    const files = await collectDroppedFiles(e.dataTransfer)
-    if (!files.length) {
-      ElMessage.info('未识别到可上传的文件（空文件夹无法上传）')
-      return
-    }
+    files = await collectDroppedFiles(e.dataTransfer)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '读取拖拽文件失败')
+    return
+  }
+  if (!files.length) {
+    ElMessage.info('未识别到可上传的文件（空文件夹无法上传）')
+    return
+  }
+  try {
+    await ensureUploadSession()
     await uploadDroppedFiles(files)
   } catch (err: any) {
     ElMessage.error(err?.message || '拖拽上传失败')
@@ -1186,22 +1220,26 @@ async function onDrop(e: DragEvent) {
 /** Traverse FileSystemEntry tree (supports folder drop). */
 async function collectDroppedFiles(dt: DataTransfer): Promise<Array<File & { webkitRelativePath?: string }>> {
   const out: Array<File & { webkitRelativePath?: string }> = []
-  const items = dt.items
-  if (items?.length) {
+  // 先同步快照 items/files，避免后续 await 后 DataTransfer 被清空
+  const itemList = dt.items ? Array.from(dt.items) : []
+  const flatFiles = Array.from(dt.files || []) as Array<File & { webkitRelativePath?: string }>
+
+  if (itemList.length) {
     const entries: FileSystemEntry[] = []
-    for (let i = 0; i < items.length; i++) {
-      const entry = items[i].webkitGetAsEntry?.()
+    for (const item of itemList) {
+      if (item.kind !== 'file') continue
+      const entry = item.webkitGetAsEntry?.()
       if (entry) entries.push(entry)
     }
     if (entries.length) {
       for (const entry of entries) {
         await walkFsEntry(entry, '', out)
       }
-      return out
+      if (out.length) return out
     }
   }
-  // Fallback: flat file list (no directory metadata)
-  return Array.from(dt.files || []) as Array<File & { webkitRelativePath?: string }>
+  // Fallback: flat file list（不支持目录结构）
+  return flatFiles
 }
 
 function readDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
@@ -1295,6 +1333,7 @@ async function uploadTreeFiles(files: Array<File & { webkitRelativePath?: string
     ElMessage.warning('正在上传中，请稍候')
     return
   }
+  await ensureUploadSession()
   uploadBusy = true
   beginUploadProgress(files.length, '正在创建目录…')
   let ok = 0
@@ -1424,6 +1463,7 @@ async function uploadFilesBatch(files: File[]) {
     ElMessage.warning('正在上传中，请稍候')
     return
   }
+  await ensureUploadSession()
   uploadBusy = true
   const folderId = view.value!.folder.folderId
   beginUploadProgress(files.length, '正在检查同名文件…')

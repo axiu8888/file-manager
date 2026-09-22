@@ -10,6 +10,7 @@ export const paths = {
     login: '/auth/login',
     signup: '/auth/signup',
     changePassword: '/auth/change-password',
+    me: '/auth/me',
   },
   folders: {
     view: '/folders/view',

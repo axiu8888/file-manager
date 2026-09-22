@@ -46,6 +46,11 @@ public class AuthController {
         return ApiResponse.ok();
     }
 
+    @GetMapping("/me")
+    public ApiResponse<AuthDtos.MeResponse> me() {
+        return ApiResponse.ok(accountService.currentUser());
+    }
+
     @PostMapping("/logout")
     public ApiResponse<Void> logout() {
         return ApiResponse.ok();

@@ -126,4 +126,14 @@ public class AccountService {
         account.setAccountPwd(passwordEncoder.encode(newPwd));
         accountRepository.save(account);
     }
+
+    public AuthDtos.MeResponse currentUser() {
+        String username = SecurityUtils.currentUsername();
+        if (username == null || username.isBlank()) {
+            throw new BizException(401, "未登录或登录已失效，请重新登录");
+        }
+        Account account = accountRepository.findByAccountName(username)
+                .orElseThrow(() -> new BizException(401, "未登录或登录已失效，请重新登录"));
+        return new AuthDtos.MeResponse(account.getAccountName(), account.getAccountAuth());
+    }
 }

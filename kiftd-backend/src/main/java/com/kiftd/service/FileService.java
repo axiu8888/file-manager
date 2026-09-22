@@ -90,6 +90,14 @@ public class FileService {
         Folder folder = folderService.requireFolder(folderId);
         folderService.checkAccess(folder);
         String name = file.getOriginalFilename() == null ? "unnamed" : file.getOriginalFilename();
+        // 浏览器拖文件夹时可能带相对路径，只保留末段文件名
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        if (slash >= 0 && slash < name.length() - 1) {
+            name = name.substring(slash + 1);
+        }
+        if (name.isBlank()) {
+            name = "unnamed";
+        }
         var existing = fileNodeRepository.findByFileParentFolderAndFileName(folderId, name);
         if (existing.isPresent()) {
             if (!overwrite) {

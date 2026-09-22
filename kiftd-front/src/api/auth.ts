@@ -53,3 +53,9 @@ export async function changePassword(oldPwd: string, newPwd: string, captchaId?:
   const encryptedNewPwd = await encryptPassword(newPwd)
   await http.post(paths.auth.changePassword, { encryptedOldPwd, encryptedNewPwd, captchaId, captcha })
 }
+
+/** 需登录；用于上传前确认会话是否真的有效 */
+export async function fetchMe() {
+  const { data } = await http.get<ApiResponse<{ account: string; auth: string }>>(paths.auth.me)
+  return data.data
+}

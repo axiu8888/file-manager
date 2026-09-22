@@ -32,7 +32,13 @@ export async function getBlobResponse(path: string) {
 http.interceptors.request.use((config) => {
   const auth = useAuthStore()
   if (auth.token) {
-    config.headers.Authorization = `Bearer ${auth.token}`
+    // AxiosHeaders：用 set 保证 FormData 上传时 Authorization 一定带上
+    if (typeof config.headers?.set === 'function') {
+      config.headers.set('Authorization', `Bearer ${auth.token}`)
+    } else {
+      config.headers = config.headers || {}
+      ;(config.headers as Record<string, string>).Authorization = `Bearer ${auth.token}`
+    }
   }
   return config
 })
@@ -45,12 +51,19 @@ http.interceptors.response.use(
     }
     const data = res.data
     if (data && typeof data === 'object' && 'code' in data && data.code !== 0) {
+      // 仅 401 清登录；403 可能是权限不足，不应整号踢下线
+      if (data.code === 401) {
+        const auth = useAuthStore()
+        auth.logout()
+        router.push({ name: 'login' })
+      }
       return Promise.reject(new Error(data.message || '请求失败'))
     }
     return res
   },
   (err) => {
-    if (err.response?.status === 401) {
+    const status = err.response?.status
+    if (status === 401) {
       const auth = useAuthStore()
       auth.logout()
       router.push({ name: 'login' })
@@ -65,7 +78,7 @@ export function normalizeHttpError(err: unknown): Error {
     message?: string
     code?: string
     response?: { status?: number; data?: unknown }
-    config?: { url?: string }
+    config?: { url?: string; method?: string }
   }
   const data = e.response?.data
   if (data && typeof data === 'object' && data !== null && 'message' in data) {
@@ -73,6 +86,17 @@ export function normalizeHttpError(err: unknown): Error {
     if (msg) return new Error(msg)
   }
   const status = e.response?.status
+  const url = e.config?.url || ''
+  if (status === 401) {
+    return new Error('未登录或登录已失效，请重新登录')
+  }
+  if (status === 403) {
+    return new Error(
+      url
+        ? `没有权限或请求被拒绝（403）：${e.config?.method?.toUpperCase() || 'REQ'} ${url}`
+        : '没有权限执行此操作（403）',
+    )
+  }
   if (status === 413) {
     return new Error('上传文件过大，已超过服务器或网关限制')
   }
@@ -81,7 +105,6 @@ export function normalizeHttpError(err: unknown): Error {
   }
   const msg = e.message || ''
   if (!e.response && (msg === 'Network Error' || e.code === 'ERR_NETWORK')) {
-    const url = e.config?.url || ''
     if (url.includes('/upload') || url.includes('/files')) {
       return new Error('上传中断（网络断开或文件过大被拒绝）。若文件很大，请确认服务端已提高上传限制并已重启。')
     }

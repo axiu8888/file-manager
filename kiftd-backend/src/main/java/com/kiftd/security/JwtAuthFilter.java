@@ -51,8 +51,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(auth);
                 }
-            } catch (Exception ignored) {
-                // invalid token -> anonymous
+            } catch (Exception ex) {
+                // 带了 Authorization 却无效：直接 401，避免被当成匿名后返回含糊的 403
+                if (header != null && header.startsWith("Bearer ")) {
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setCharacterEncoding("UTF-8");
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write(
+                            "{\"code\":401,\"message\":\"未登录或登录已失效，请重新登录\",\"data\":null}");
+                    return;
+                }
             }
         }
         filterChain.doFilter(request, response);

@@ -96,7 +96,9 @@ export async function checkUpload(folderId: string, fileNames: string[]) {
 
 export async function uploadFile(folderId: string, file: File, uploadKey: string, overwrite = false, onProgress?: (p: number) => void) {
   const form = new FormData()
-  form.append('file', file)
+  // 只用文件名，避免拖拽目录时把相对路径写进 Content-Disposition
+  const baseName = (file.name || 'unnamed').split(/[/\\]/).pop() || 'unnamed'
+  form.append('file', file, baseName)
   form.append('folderId', folderId)
   form.append('uploadKey', uploadKey)
   form.append('overwrite', String(overwrite))

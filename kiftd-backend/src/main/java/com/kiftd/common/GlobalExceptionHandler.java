@@ -18,7 +18,14 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BizException.class)
     public ResponseEntity<ApiResponse<Void>> handleBiz(BizException e) {
-        return ResponseEntity.ok(ApiResponse.fail(e.getCode(), e.getMessage()));
+        int code = e.getCode();
+        if (code == 401) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.fail(code, e.getMessage()));
+        }
+        if (code == 403) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.fail(code, e.getMessage()));
+        }
+        return ResponseEntity.ok(ApiResponse.fail(code, e.getMessage()));
     }
 
     @ExceptionHandler({
