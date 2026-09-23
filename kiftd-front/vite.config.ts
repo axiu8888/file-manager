@@ -48,7 +48,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      include: ['epubjs', 'jszip', 'pdfjs-dist'],
+      include: ['epubjs', 'jszip', 'pdfjs-dist', '@lingo-reader/mobi-parser'],
     },
   }
 })

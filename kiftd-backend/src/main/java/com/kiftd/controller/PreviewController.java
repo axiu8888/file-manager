@@ -224,6 +224,7 @@ public class PreviewController {
         if (n.endsWith(".webp")) return "image/webp";
         if (n.endsWith(".pdf")) return "application/pdf";
         if (n.endsWith(".epub")) return "application/epub+zip";
+        if (n.endsWith(".mobi") || n.endsWith(".azw") || n.endsWith(".azw3")) return "application/x-mobipocket-ebook";
         if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html;charset=UTF-8";
         if (n.endsWith(".css")) return "text/css;charset=UTF-8";
         if (n.endsWith(".js") || n.endsWith(".mjs") || n.endsWith(".cjs")) return "text/javascript;charset=UTF-8";

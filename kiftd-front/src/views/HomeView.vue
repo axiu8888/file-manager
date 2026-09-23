@@ -248,8 +248,8 @@
       v-model="audioVisible"
       :title="currentAudio?.fileName || '音频播放'"
       :show-mask="false"
-      :initial-width="860"
-      :initial-height="520"
+      :initial-width="920"
+      :initial-height="600"
       :z-index="audioWinZ"
       @activate="onAudioActivate"
       @closed="onAudioClosed"
@@ -262,14 +262,24 @@
           <div class="audio-with-list">
             <div class="audio-main">
               <div class="audio-stage">
-                <div class="audio-disc" :class="{ playing: audioPlaying }">
-                  <div class="audio-disc-ring" aria-hidden="true" />
-                  <div class="audio-disc-core" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                      <path
-                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6zm-2 14a2 2 0 1 1 0-.01V17z"
-                      />
-                    </svg>
+                <div class="audio-visual">
+                  <div class="audio-disc" :class="{ playing: audioPlaying }">
+                    <div class="audio-disc-ring" aria-hidden="true" />
+                    <div class="audio-disc-core" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+                        <path
+                          d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6zm-2 14a2 2 0 1 1 0-.01V17z"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  <div class="audio-spectrum" aria-hidden="true">
+                    <span
+                      v-for="(h, i) in audioSpectrum"
+                      :key="i"
+                      class="audio-spectrum-bar"
+                      :style="{ height: `${Math.max(8, Math.round(h * 100))}%` }"
+                    />
                   </div>
                 </div>
                 <div class="audio-meta">
@@ -279,11 +289,29 @@
                   <div class="audio-sub">
                     {{ audioTrackLabel }}
                     <span v-if="audioExt" class="audio-ext">{{ audioExt }}</span>
+                    <span class="audio-fx-badge" :title="audioFxHint">{{ audioFxLabel }}</span>
                   </div>
                 </div>
               </div>
 
               <div class="audio-controls">
+                <div class="audio-fx-panel">
+                  <label class="audio-fx-title" for="audio-fx-select">音效</label>
+                  <select
+                    id="audio-fx-select"
+                    class="audio-fx-select"
+                    :value="audioFxPreset"
+                    :disabled="!currentAudio"
+                    :title="audioFxHint"
+                    @change="onAudioFxChange"
+                  >
+                    <option v-for="p in audioFxPresets" :key="p.id" :value="p.id">
+                      {{ p.label }}
+                    </option>
+                  </select>
+                  <span class="audio-fx-hint">{{ audioFxHint }}</span>
+                </div>
+
                 <div class="audio-time-row">
                   <span>{{ formatAudioTime(audioCurrent) }}</span>
                   <input
@@ -513,6 +541,18 @@ import { bindVideoVolume, getCachedMuted, getCachedVideoVolume, setCachedVideoVo
 import { compareFileMeta, loadSiblingSort, sortSiblingItems, type SiblingSortState } from '@/utils/siblingSort'
 import { isTopmostWindow } from '@/utils/windowStack'
 import {
+  AUDIO_FX_PRESETS,
+  applyAudioFxPreset,
+  connectAudioElement,
+  disconnectAudioFx,
+  getAudioFxPreset,
+  loadAudioFxPresetId,
+  resumeAudioFx,
+  sampleAudioSpectrum,
+  saveAudioFxPresetId,
+  type AudioFxPresetId,
+} from '@/utils/audioFx'
+import {
   Search,
   FolderAdd,
   Upload,
@@ -632,6 +672,10 @@ const audioCurrent = ref(0)
 const audioDuration = ref(0)
 const audioVolume = ref(getCachedVideoVolume())
 const audioMuted = ref(getCachedMuted())
+const audioFxPresets = AUDIO_FX_PRESETS
+const audioFxPreset = ref<AudioFxPresetId>(loadAudioFxPresetId())
+const audioSpectrum = ref<number[]>(Array.from({ length: 24 }, () => 0.12))
+let audioSpectrumRaf = 0
 const audios = ref<
   { fileId: string; fileName: string; url: string; fileCreationDate?: string; fileSize?: string }[]
 >([])
@@ -658,6 +702,47 @@ const audioTrackLabel = computed(() => {
   if (!audios.value.length) return '播放列表为空'
   return `第 ${audioIndex.value + 1} / ${audios.value.length} 首`
 })
+const audioFxLabel = computed(() => getAudioFxPreset(audioFxPreset.value).label)
+const audioFxHint = computed(() => getAudioFxPreset(audioFxPreset.value).hint)
+
+function setAudioFxPreset(id: AudioFxPresetId) {
+  if (!AUDIO_FX_PRESETS.some((p) => p.id === id)) return
+  audioFxPreset.value = id
+  saveAudioFxPresetId(id)
+  applyAudioFxPreset(id)
+}
+
+function restoreAudioFxPreset() {
+  const cached = loadAudioFxPresetId()
+  audioFxPreset.value = cached
+  applyAudioFxPreset(cached)
+}
+
+function onAudioFxChange(e: Event) {
+  setAudioFxPreset((e.target as HTMLSelectElement).value as AudioFxPresetId)
+}
+
+function stopAudioSpectrum() {
+  if (audioSpectrumRaf) {
+    cancelAnimationFrame(audioSpectrumRaf)
+    audioSpectrumRaf = 0
+  }
+  audioSpectrum.value = Array.from({ length: 24 }, () => 0.12)
+}
+
+function tickAudioSpectrum() {
+  if (!audioPlaying.value) {
+    audioSpectrumRaf = 0
+    return
+  }
+  audioSpectrum.value = sampleAudioSpectrum(24)
+  audioSpectrumRaf = requestAnimationFrame(tickAudioSpectrum)
+}
+
+function startAudioSpectrum() {
+  if (audioSpectrumRaf) return
+  audioSpectrumRaf = requestAnimationFrame(tickAudioSpectrum)
+}
 
 function formatAudioTime(sec: number) {
   if (!Number.isFinite(sec) || sec < 0) return '0:00'
@@ -698,11 +783,14 @@ function onAudioPlay(e: Event) {
   // 忽略旧 audio 节点卸载时的滞后事件
   if (e.target !== audioRef.value) return
   audioPlaying.value = true
+  void resumeAudioFx()
+  startAudioSpectrum()
 }
 
 function onAudioPause(e: Event) {
   if (e.target !== audioRef.value) return
   audioPlaying.value = false
+  stopAudioSpectrum()
 }
 
 function onAudioSeek(e: Event) {
@@ -833,14 +921,18 @@ async function toggleAudioPlay() {
   if (!el) return
   if (el.paused) {
     try {
+      await connectAudioElement(el)
+      applyAudioFxPreset(audioFxPreset.value)
       await el.play()
       audioPlaying.value = true
+      startAudioSpectrum()
     } catch {
       /* ignore */
     }
   } else {
     el.pause()
     audioPlaying.value = false
+    stopAudioSpectrum()
   }
 }
 
@@ -859,18 +951,22 @@ function onAudioEnded() {
   }
   audioPlaying.value = false
   audioCurrent.value = 0
+  stopAudioSpectrum()
 }
 
 function stopAudio() {
+  stopAudioSpectrum()
   const el = audioRef.value
-  if (!el) return
-  try {
-    el.pause()
-    el.removeAttribute('src')
-    el.load()
-  } catch {
-    /* ignore */
+  if (el) {
+    try {
+      el.pause()
+      el.removeAttribute('src')
+      el.load()
+    } catch {
+      /* ignore */
+    }
   }
+  disconnectAudioFx()
   audioPlaying.value = false
   audioCurrent.value = 0
   audioDuration.value = 0
@@ -882,20 +978,24 @@ watch(
     if (!audioVisible.value || !currentAudio.value) return
     audioCurrent.value = 0
     audioDuration.value = 0
+    stopAudioSpectrum()
     await nextTick()
     const el = audioRef.value
     if (!el) return
-  bindVideoVolume(el)
-  syncAudioVolumeUi()
-  try {
-    await el.play()
-    // 显式同步按钮状态，避免旧节点 pause 事件覆盖
-    if (audioRef.value === el && !el.paused) {
-      audioPlaying.value = true
+    bindVideoVolume(el)
+    syncAudioVolumeUi()
+    try {
+      await connectAudioElement(el)
+      applyAudioFxPreset(audioFxPreset.value)
+      await el.play()
+      // 显式同步按钮状态，避免旧节点 pause 事件覆盖
+      if (audioRef.value === el && !el.paused) {
+        audioPlaying.value = true
+        startAudioSpectrum()
+      }
+    } catch {
+      if (audioRef.value === el) audioPlaying.value = false
     }
-  } catch {
-    if (audioRef.value === el) audioPlaying.value = false
-  }
   },
   { flush: 'post' },
 )
@@ -1724,6 +1824,10 @@ function isEpub(name: string) {
   return /\.epub$/i.test(name)
 }
 
+function isMobi(name: string) {
+  return /\.(mobi|azw|azw3)$/i.test(name)
+}
+
 const thumbFailed = ref(new Set<string>())
 
 function supportsThumb(name: string) {
@@ -1831,6 +1935,7 @@ async function preview(row: Row) {
     const idx = audios.value.findIndex((a) => a.fileId === row.id)
     audioIndex.value = idx >= 0 ? idx : 0
     audioListOpen.value = audios.value.length > 1
+    restoreAudioFxPreset()
     audioWinZ.value = ++previewZ
     audioVisible.value = true
     return
@@ -1842,6 +1947,10 @@ async function preview(row: Row) {
   }
   if (isEpub(name)) {
     openFilePreview(row, 'epub')
+    return
+  }
+  if (isMobi(name)) {
+    openFilePreview(row, 'mobi')
     return
   }
   if (isPdf(name)) {
@@ -1905,6 +2014,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onMediaHotkey)
+  stopAudioSpectrum()
+  disconnectAudioFx()
 })
 </script>
 
@@ -2428,8 +2539,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 28px;
-  padding: 32px 36px;
+  gap: 22px;
+  padding: 28px 32px;
   color: #e5e7eb;
 }
 .audio-stage {
@@ -2438,10 +2549,17 @@ onBeforeUnmount(() => {
   gap: 22px;
   min-width: 0;
 }
+.audio-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
 .audio-disc {
   position: relative;
-  width: 132px;
-  height: 132px;
+  width: 120px;
+  height: 120px;
   flex-shrink: 0;
   border-radius: 50%;
   background:
@@ -2463,13 +2581,29 @@ onBeforeUnmount(() => {
 }
 .audio-disc-core {
   position: absolute;
-  inset: 44px;
+  inset: 40px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: #99f6e4;
   background: radial-gradient(circle at 40% 35%, #1f2937, #020617 70%);
   box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.35);
+}
+.audio-spectrum {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  width: 132px;
+  height: 36px;
+}
+.audio-spectrum-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, #5eead4 0%, #0f766e 100%);
+  opacity: 0.85;
+  transition: height 0.08s linear;
 }
 .audio-meta {
   min-width: 0;
@@ -2489,6 +2623,7 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 13px;
   color: #94a3b8;
@@ -2503,10 +2638,82 @@ onBeforeUnmount(() => {
   font-size: 11px;
   letter-spacing: 0.04em;
 }
+.audio-fx-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  color: #99f6e4;
+  background: rgba(15, 118, 110, 0.22);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
 .audio-controls {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+}
+.audio-fx-panel {
+  display: grid;
+  grid-template-columns: auto minmax(140px, 200px) 1fr;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+.audio-fx-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.audio-fx-select {
+  width: 100%;
+  height: 34px;
+  padding: 0 28px 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background:
+    linear-gradient(45deg, transparent 50%, #94a3b8 50%) calc(100% - 14px) / 5px 5px no-repeat,
+    linear-gradient(135deg, #94a3b8 50%, transparent 50%) calc(100% - 9px) / 5px 5px no-repeat,
+    rgba(15, 23, 42, 0.7);
+  color: #e2e8f0;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.audio-fx-select:hover:not(:disabled),
+.audio-fx-select:focus {
+  border-color: rgba(94, 234, 212, 0.45);
+}
+.audio-fx-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.audio-fx-select option {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.audio-fx-hint {
+  font-size: 12px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .audio-fx-panel {
+    grid-template-columns: auto 1fr;
+  }
+  .audio-fx-hint {
+    grid-column: 1 / -1;
+  }
 }
 .audio-time-row {
   display: grid;

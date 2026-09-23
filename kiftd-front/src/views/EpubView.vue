@@ -3,6 +3,39 @@
     <header class="epub-bar">
       <div class="epub-title">{{ fileName || 'EPUB 阅读' }}</div>
       <div class="epub-actions">
+        <span class="reader-tools" aria-label="阅读设置">
+          <button
+            type="button"
+            class="reader-font-btn"
+            title="减小字号"
+            :disabled="fontSize <= fontSizes[0]"
+            @click="changeFont(-1)"
+          >
+            A-
+          </button>
+          <span class="reader-font-label">{{ fontSize }}</span>
+          <button
+            type="button"
+            class="reader-font-btn"
+            title="增大字号"
+            :disabled="fontSize >= fontSizes[fontSizes.length - 1]"
+            @click="changeFont(1)"
+          >
+            A+
+          </button>
+          <span class="reader-bg-group" title="背景色">
+            <button
+              v-for="t in bgThemes"
+              :key="t.id"
+              type="button"
+              class="reader-bg-swatch"
+              :class="{ active: bgId === t.id }"
+              :style="{ background: t.bg }"
+              :title="t.label"
+              @click="setBg(t.id)"
+            />
+          </span>
+        </span>
         <el-button title="也可滚轮 / 左右点击翻页" @click="prev">上一页</el-button>
         <el-button title="也可滚轮 / 左右点击翻页" @click="next">下一页</el-button>
         <el-button @click="$router.push('/')">返回</el-button>
@@ -10,15 +43,28 @@
     </header>
     <div v-if="loading" class="epub-status">正在加载电子书…</div>
     <div v-else-if="error" class="epub-status error">{{ error }}</div>
-    <div ref="viewerRef" class="epub-viewer" />
+    <div ref="viewerRef" class="epub-viewer" :style="{ background: theme.bg }" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ePub from 'epubjs'
 import { fetchPreviewResource } from '@/api/files'
+import {
+  READER_BG_THEMES,
+  READER_FONT_SIZES,
+  applyEpubReaderTheme,
+  getReaderBgTheme,
+  loadReaderBgId,
+  loadReaderFontSize,
+  nextReaderFontSize,
+  saveReaderBgId,
+  saveReaderFontSize,
+  type ReaderBgId,
+  type ReaderFontSize,
+} from '@/utils/readerTheme'
 
 const route = useRoute()
 const fileId = route.params.fileId as string
@@ -26,6 +72,11 @@ const viewerRef = ref<HTMLElement | null>(null)
 const fileName = ref((route.query.name as string) || '')
 const loading = ref(true)
 const error = ref('')
+const fontSizes = READER_FONT_SIZES
+const bgThemes = READER_BG_THEMES
+const fontSize = ref<ReaderFontSize>(loadReaderFontSize())
+const bgId = ref<ReaderBgId>(loadReaderBgId())
+const theme = computed(() => getReaderBgTheme(bgId.value))
 
 let book: ReturnType<typeof ePub> | null = null
 let rendition: ReturnType<ReturnType<typeof ePub>['renderTo']> | null = null
@@ -36,9 +87,33 @@ let wheelUnlockTimer: ReturnType<typeof setTimeout> | null = null
 const WHEEL_THRESHOLD = 60
 const WHEEL_COOLDOWN_MS = 320
 
-watch(fileName, (v) => {
-  if (v) document.title = v
-}, { immediate: true })
+watch(
+  fileName,
+  (v) => {
+    if (v) document.title = v
+  },
+  { immediate: true },
+)
+
+function applyTheme() {
+  if (!rendition) return
+  applyEpubReaderTheme(rendition, fontSize.value, theme.value)
+}
+
+function changeFont(dir: 1 | -1) {
+  const next = nextReaderFontSize(fontSize.value, dir)
+  if (next === fontSize.value) return
+  fontSize.value = next
+  saveReaderFontSize(next)
+  applyTheme()
+}
+
+function setBg(id: ReaderBgId) {
+  if (bgId.value === id) return
+  bgId.value = id
+  saveReaderBgId(id)
+  applyTheme()
+}
 
 async function load() {
   loading.value = true
@@ -72,6 +147,7 @@ async function load() {
       })
     })
     await rendition.display()
+    applyTheme()
     viewerRef.value.addEventListener('wheel', onEpubWheel, { passive: false })
     viewerRef.value.addEventListener('click', onEpubTapTurn as EventListener)
     window.addEventListener('keydown', onKey)
@@ -202,6 +278,62 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.reader-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+}
+.reader-font-btn {
+  min-width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reader-font-btn:hover:not(:disabled) {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+.reader-font-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.reader-font-label {
+  min-width: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+.reader-bg-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(148, 163, 184, 0.35);
+}
+.reader-bg-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  cursor: pointer;
+  padding: 0;
+}
+.reader-bg-swatch.active {
+  outline: 2px solid #0f766e;
+  outline-offset: 1px;
 }
 .epub-viewer {
   flex: 1;

@@ -269,7 +269,8 @@ public class PreviewService {
         if (index < 0) {
             throw new BizException("幻灯片页码无效");
         }
-        String cacheKey = fileId + "#" + index + "#" + path.toAbsolutePath() + "#" + path.toFile().lastModified();
+        String cacheKey = fileId + "#" + index + "#" + path.toAbsolutePath() + "#" + path.toFile().lastModified()
+                + "#" + com.kiftd.util.PptFontSupport.CACHE_TAG;
         byte[] cached = pptSlideCache.get(cacheKey);
         if (cached != null) {
             return cached;
@@ -295,6 +296,8 @@ public class PreviewService {
                     g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
                     g.setRenderingHint(java.awt.RenderingHints.KEY_RENDERING, java.awt.RenderingHints.VALUE_RENDER_QUALITY);
                     g.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                    g.setRenderingHint(java.awt.RenderingHints.KEY_FRACTIONALMETRICS, java.awt.RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                    com.kiftd.util.PptFontSupport.prepareGraphics(g);
                     g.setPaint(java.awt.Color.WHITE);
                     g.fillRect(0, 0, w, h);
                     g.scale(PPT_SCALE, PPT_SCALE);
@@ -710,6 +713,11 @@ public class PreviewService {
         return name.toLowerCase(Locale.ROOT).endsWith(".epub");
     }
 
+    public static boolean isMobi(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".mobi") || n.endsWith(".azw") || n.endsWith(".azw3");
+    }
+
     public static boolean isOffice(String name) {
         String n = name.toLowerCase(Locale.ROOT);
         return n.endsWith(".doc") || n.endsWith(".docx");
@@ -742,6 +750,7 @@ public class PreviewService {
         if (isVideo(name)) return "video";
         if (isPdf(name)) return "pdf";
         if (isEpub(name)) return "epub";
+        if (isMobi(name)) return "mobi";
         if (isExcel(name)) return "excel";
         if (isPpt(name)) return "ppt";
         if (isOffice(name)) return "office";

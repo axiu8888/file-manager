@@ -11,11 +11,13 @@ RUN sed -i 's|http://.*debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources
 RUN sed -i 's|http://.*archive.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
 RUN sed -i 's|http://.*security.ubuntu.com|https://mirrors.aliyun.com|g' /etc/apt/sources.list
 
-# 适配部分docker不支持的问题
+# 适配部分docker不支持的问题；安装中文字体供 PPT/PDF 预览渲染（避免方块字）
 RUN apt-get update && apt-get upgrade -y && apt-get update -y \
  && apt-get install -y libltdl7 fontconfig libfreetype6 ffmpeg \
+ && apt-get install -y fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei \
  && apt-get install -y cron vim curl wget zip tree net-tools tcpdump iputils-ping \
  && apt-get install -y docker-cli \
+ && fc-cache -f \
  && apt-get clean
 
 # ENV TIME_ZONE Asia/Shanghai

@@ -58,15 +58,62 @@
           </div>
         </div>
 
-        <div v-if="type === 'epub' && !error" class="preview-epub">
+        <div v-if="(type === 'epub' || type === 'mobi') && !error" class="preview-epub">
           <div v-show="!immersive" class="epub-toolbar">
             <el-button size="small" @click="toggleToc">{{ tocOpen ? '隐藏目录' : '目录' }}</el-button>
-            <el-button size="small" :disabled="loading" title="也可滚轮 / 左右点击翻页" @click="epubPrev">上一页</el-button>
-            <el-button size="small" :disabled="loading" title="也可滚轮 / 左右点击翻页" @click="epubNext">下一页</el-button>
+            <el-button
+              size="small"
+              :disabled="loading || !canEbookPrev"
+              title="也可滚轮 / 左右点击翻页"
+              @click="ebookPrev"
+            >
+              上一页
+            </el-button>
+            <el-button
+              size="small"
+              :disabled="loading || !canEbookNext"
+              title="也可滚轮 / 左右点击翻页"
+              @click="ebookNext"
+            >
+              下一页
+            </el-button>
+            <span class="reader-tools" aria-label="阅读设置">
+              <button
+                type="button"
+                class="reader-font-btn"
+                title="减小字号"
+                :disabled="readerFontSize <= readerFontSizes[0]"
+                @click="changeReaderFont(-1)"
+              >
+                A-
+              </button>
+              <span class="reader-font-label">{{ readerFontSize }}</span>
+              <button
+                type="button"
+                class="reader-font-btn"
+                title="增大字号"
+                :disabled="readerFontSize >= readerFontSizes[readerFontSizes.length - 1]"
+                @click="changeReaderFont(1)"
+              >
+                A+
+              </button>
+              <span class="reader-bg-group" title="背景色">
+                <button
+                  v-for="t in readerBgThemes"
+                  :key="t.id"
+                  type="button"
+                  class="reader-bg-swatch"
+                  :class="{ active: readerBgId === t.id }"
+                  :style="{ background: t.bg, color: t.fg }"
+                  :title="t.label"
+                  @click="setReaderBg(t.id)"
+                />
+              </span>
+            </span>
             <span v-if="chapterLabel" class="epub-chapter">{{ chapterLabel }}</span>
           </div>
-          <div class="epub-main" :class="{ immersive }">
-            <aside v-show="tocOpen && !immersive" class="epub-toc">
+          <div class="epub-main" :class="{ immersive }" :style="readerShellStyle">
+            <aside v-show="tocOpen && !immersive" class="epub-toc" :style="readerTocStyle">
               <div class="epub-toc-title">目录</div>
               <div v-if="!tocItems.length" class="epub-toc-empty">暂无目录</div>
               <button
@@ -81,7 +128,7 @@
                 {{ item.label }}
               </button>
             </aside>
-            <div ref="epubViewerRef" class="epub-viewer" />
+            <div ref="epubViewerRef" class="epub-viewer" :style="{ background: readerTheme.bg }" />
           </div>
         </div>
 
@@ -202,42 +249,77 @@
           </template>
         </div>
 
-        <div v-if="!loading && !error && type === 'text'" class="preview-text">
-          <div v-if="showTextToolbar" class="md-toolbar">
-            <el-button-group v-if="textMode === 'markdown' || (textMode === 'html' && textEditing)">
-              <el-button size="small" :type="paneLayout === 'source' ? 'primary' : 'default'" @click="paneLayout = 'source'">
-                源码
-              </el-button>
-              <el-button size="small" :type="paneLayout === 'split' ? 'primary' : 'default'" @click="paneLayout = 'split'">
-                并排
-              </el-button>
-              <el-button size="small" :type="paneLayout === 'preview' ? 'primary' : 'default'" @click="paneLayout = 'preview'">
-                预览
-              </el-button>
-            </el-button-group>
-            <div v-if="canEditText" class="text-edit-actions">
-              <template v-if="textEditing">
-                <span class="text-edit-status">{{ textDirty ? '未保存' : '已保存' }}</span>
-                <el-button size="small" :disabled="textSaving" @click="cancelEdit">退出编辑</el-button>
-                <el-button
-                  size="small"
-                  type="primary"
-                  title="Ctrl+S"
-                  :disabled="!textDirty || textSaving"
-                  :loading="textSaving"
-                  @click="saveText"
-                >
-                  保存
+        <div v-if="!loading && !error && type === 'text'" class="preview-text" :style="readerShellStyle">
+          <div class="md-toolbar">
+            <span class="reader-tools" aria-label="阅读设置">
+              <button
+                type="button"
+                class="reader-font-btn"
+                title="减小字号"
+                :disabled="readerFontSize <= readerFontSizes[0]"
+                @click="changeReaderFont(-1)"
+              >
+                A-
+              </button>
+              <span class="reader-font-label">{{ readerFontSize }}</span>
+              <button
+                type="button"
+                class="reader-font-btn"
+                title="增大字号"
+                :disabled="readerFontSize >= readerFontSizes[readerFontSizes.length - 1]"
+                @click="changeReaderFont(1)"
+              >
+                A+
+              </button>
+              <span class="reader-bg-group" title="背景色">
+                <button
+                  v-for="t in readerBgThemes"
+                  :key="t.id"
+                  type="button"
+                  class="reader-bg-swatch"
+                  :class="{ active: readerBgId === t.id }"
+                  :style="{ background: t.bg, color: t.fg }"
+                  :title="t.label"
+                  @click="setReaderBg(t.id)"
+                />
+              </span>
+            </span>
+            <template v-if="showTextToolbar">
+              <el-button-group v-if="textMode === 'markdown' || (textMode === 'html' && textEditing)">
+                <el-button size="small" :type="paneLayout === 'source' ? 'primary' : 'default'" @click="paneLayout = 'source'">
+                  源码
                 </el-button>
-              </template>
-              <el-button v-else size="small" type="primary" @click="startEdit">编辑</el-button>
-            </div>
+                <el-button size="small" :type="paneLayout === 'split' ? 'primary' : 'default'" @click="paneLayout = 'split'">
+                  并排
+                </el-button>
+                <el-button size="small" :type="paneLayout === 'preview' ? 'primary' : 'default'" @click="paneLayout = 'preview'">
+                  预览
+                </el-button>
+              </el-button-group>
+              <div v-if="canEditText" class="text-edit-actions">
+                <template v-if="textEditing">
+                  <span class="text-edit-status">{{ textDirty ? '未保存' : '已保存' }}</span>
+                  <el-button size="small" :disabled="textSaving" @click="cancelEdit">退出编辑</el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    title="Ctrl+S"
+                    :disabled="!textDirty || textSaving"
+                    :loading="textSaving"
+                    @click="saveText"
+                  >
+                    保存
+                  </el-button>
+                </template>
+                <el-button v-else size="small" type="primary" @click="startEdit">编辑</el-button>
+              </div>
+            </template>
           </div>
 
           <template v-if="textMode === 'html'">
             <div v-if="textEditing" class="md-panes" :class="`layout-${paneLayout}`">
               <div v-show="paneLayout !== 'preview'" class="md-source">
-                <textarea v-model="textContent" class="text-editor" spellcheck="false" />
+                <textarea v-model="textContent" class="text-editor" :style="readerTextStyle" spellcheck="false" />
               </div>
               <div v-show="paneLayout === 'split'" class="md-split-line" aria-hidden="true" />
               <iframe
@@ -260,18 +342,30 @@
           <template v-else-if="textMode === 'markdown'">
             <div class="md-panes" :class="`layout-${paneLayout}`">
               <div v-show="paneLayout !== 'preview'" class="md-source">
-                <textarea v-if="textEditing" v-model="textContent" class="text-editor" spellcheck="false" />
-                <pre v-else class="text-pre md-source-pre"><code>{{ textContent }}</code></pre>
+                <textarea
+                  v-if="textEditing"
+                  v-model="textContent"
+                  class="text-editor"
+                  :style="readerTextStyle"
+                  spellcheck="false"
+                />
+                <pre v-else class="text-pre md-source-pre" :style="readerTextStyle"><code>{{ textContent }}</code></pre>
               </div>
               <div v-show="paneLayout === 'split'" class="md-split-line" aria-hidden="true" />
-              <div v-show="paneLayout !== 'source'" class="md-preview">
+              <div v-show="paneLayout !== 'source'" class="md-preview" :style="readerTextStyle">
                 <div class="text-md" v-html="renderedMarkdown" />
               </div>
             </div>
           </template>
 
-          <textarea v-else-if="textEditing" v-model="textContent" class="text-editor" spellcheck="false" />
-          <pre v-else class="text-pre"><code>{{ textContent }}</code></pre>
+          <textarea
+            v-else-if="textEditing"
+            v-model="textContent"
+            class="text-editor"
+            :style="readerTextStyle"
+            spellcheck="false"
+          />
+          <pre v-else class="text-pre" :style="readerTextStyle"><code>{{ textContent }}</code></pre>
         </div>
           </div>
           <SiblingPlaylist
@@ -303,6 +397,24 @@ import SiblingPlaylist, { type SiblingItem } from '@/components/SiblingPlaylist.
 import { bindVideoVolume } from '@/utils/mediaVolume'
 import { loadSiblingSort, sortSiblingItems, type SiblingSortState } from '@/utils/siblingSort'
 import { isTopmostWindow } from '@/utils/windowStack'
+import {
+  buildMobiChapterDocument,
+  openMobiBook,
+  type OpenedMobiBook,
+} from '@/utils/mobiBook'
+import {
+  READER_BG_THEMES,
+  READER_FONT_SIZES,
+  applyEpubReaderTheme,
+  getReaderBgTheme,
+  loadReaderBgId,
+  loadReaderFontSize,
+  nextReaderFontSize,
+  saveReaderBgId,
+  saveReaderFontSize,
+  type ReaderBgId,
+  type ReaderFontSize,
+} from '@/utils/readerTheme'
 import { fetchPdfPreview, fetchPreviewResource, getExcel, getPpt, getSiblings, getTranscodeStatus, getVideo, saveTextContent } from '@/api/files'
 import { isPreviewResourceUrl, pptSlideUrl, previewResourceUrl, previewThumbUrl } from '@/api/urls'
 
@@ -317,7 +429,7 @@ marked.setOptions({
   breaks: true,
 })
 
-export type PreviewType = 'pdf' | 'epub' | 'video' | 'text' | 'excel' | 'ppt'
+export type PreviewType = 'pdf' | 'epub' | 'mobi' | 'video' | 'text' | 'excel' | 'ppt'
 
 const props = defineProps<{
   modelValue: boolean
@@ -450,12 +562,69 @@ const displayTitle = computed(() => {
 
 const listTitle = computed(() => {
   if (props.type === 'video') return '播放列表'
-  if (props.type === 'epub') return '书籍列表'
+  if (props.type === 'epub' || props.type === 'mobi') return '书籍列表'
   if (props.type === 'pdf') return props.kind === 'office' ? '文档列表' : 'PDF 列表'
   if (props.type === 'excel') return '表格列表'
   if (props.type === 'ppt') return '演示列表'
   return '文件列表'
 })
+
+const canEbookPrev = computed(() => {
+  if (props.type === 'mobi') return mobiChapterIndex.value > 0
+  return true
+})
+const canEbookNext = computed(() => {
+  if (props.type === 'mobi') {
+    return !!mobiBook && mobiChapterIndex.value < mobiBook.spineIds.length - 1
+  }
+  return true
+})
+
+const readerFontSizes = READER_FONT_SIZES
+const readerBgThemes = READER_BG_THEMES
+const readerFontSize = ref<ReaderFontSize>(loadReaderFontSize())
+const readerBgId = ref<ReaderBgId>(loadReaderBgId())
+const readerTheme = computed(() => getReaderBgTheme(readerBgId.value))
+const readerShellStyle = computed(() => ({
+  background: readerTheme.value.bg,
+  color: readerTheme.value.fg,
+}))
+const readerTocStyle = computed(() => ({
+  background: readerTheme.value.bg,
+  color: readerTheme.value.fg,
+  borderColor: readerBgId.value === 'night' ? 'rgba(148,163,184,0.25)' : undefined,
+}))
+const readerTextStyle = computed(() => ({
+  background: readerTheme.value.bg,
+  color: readerTheme.value.fg,
+  fontSize: `${readerFontSize.value}px`,
+  lineHeight: '1.8',
+}))
+
+function changeReaderFont(dir: 1 | -1) {
+  const next = nextReaderFontSize(readerFontSize.value, dir)
+  if (next === readerFontSize.value) return
+  readerFontSize.value = next
+  saveReaderFontSize(next)
+  applyReaderThemeToContent()
+}
+
+function setReaderBg(id: ReaderBgId) {
+  if (readerBgId.value === id) return
+  readerBgId.value = id
+  saveReaderBgId(id)
+  applyReaderThemeToContent()
+}
+
+function applyReaderThemeToContent() {
+  if (props.type === 'epub' && rendition) {
+    applyEpubReaderTheme(rendition, readerFontSize.value, readerTheme.value)
+    return
+  }
+  if (props.type === 'mobi' && mobiBook) {
+    void showMobiChapter(mobiChapterIndex.value)
+  }
+}
 
 function activeId() {
   return currentFileId.value || props.fileId
@@ -505,6 +674,9 @@ async function pdfBytesWithTitle(buf: ArrayBuffer, title: string): Promise<Uint8
 let objectUrl = ''
 let book: ReturnType<typeof ePub> | null = null
 let rendition: ReturnType<ReturnType<typeof ePub>['renderTo']> | null = null
+let mobiBook: OpenedMobiBook | null = null
+let mobiFrame: HTMLIFrameElement | null = null
+const mobiChapterIndex = ref(0)
 let loadSeq = 0
 let epubFlow: 'paginated' | 'scrolled-doc' = 'paginated'
 let wheelAcc = 0
@@ -561,6 +733,8 @@ function resetViewer() {
   if (viewer) {
     viewer.removeEventListener('wheel', onEpubWheel)
     viewer.removeEventListener('click', onEpubTapTurn)
+    viewer.removeEventListener('wheel', onMobiWheel)
+    viewer.removeEventListener('click', onMobiTapTurn as EventListener)
   }
   if (wheelUnlockTimer) {
     clearTimeout(wheelUnlockTimer)
@@ -579,8 +753,16 @@ function resetViewer() {
   } catch {
     /* ignore */
   }
+  try {
+    mobiBook?.destroy()
+  } catch {
+    /* ignore */
+  }
   rendition = null
   book = null
+  mobiBook = null
+  mobiFrame = null
+  mobiChapterIndex.value = 0
   if (objectUrl) {
     URL.revokeObjectURL(objectUrl)
     objectUrl = ''
@@ -757,11 +939,15 @@ function syncActiveToc(href?: string) {
 }
 
 async function goToc(item: TocItem) {
+  if (props.type === 'mobi') {
+    await goMobiToc(item)
+    return
+  }
   if (!rendition) return
+  activeTocId.value = item.id
+  chapterLabel.value = item.label
   try {
     await rendition.display(item.href)
-    activeTocId.value = item.id
-    chapterLabel.value = item.label
   } catch (e) {
     console.warn('toc jump failed', e)
   }
@@ -1002,6 +1188,7 @@ async function loadCurrentContent(seq: number) {
   if (props.type === 'pdf') await loadPdf()
   else if (props.type === 'video') await loadVideo()
   else if (props.type === 'epub') await loadEpub(seq)
+  else if (props.type === 'mobi') await loadMobi(seq)
   else if (props.type === 'text') await loadText()
   else if (props.type === 'excel') await loadExcel()
   else if (props.type === 'ppt') await loadPpt()
@@ -1140,6 +1327,7 @@ async function loadEpub(seq: number) {
     })
     bindEpubContentNav()
     await rendition.display()
+    applyEpubReaderTheme(rendition, readerFontSize.value, readerTheme.value)
     syncActiveToc((rendition as any)?.location?.start?.href)
   }
 
@@ -1242,6 +1430,237 @@ function epubPrev() {
 function epubNext() {
   turnEpub(1)
 }
+
+function ebookPrev() {
+  if (props.type === 'mobi') mobiPrev()
+  else epubPrev()
+}
+function ebookNext() {
+  if (props.type === 'mobi') mobiNext()
+  else epubNext()
+}
+
+function buildMobiToc() {
+  const items: TocItem[] = []
+  if (mobiBook?.toc?.length) {
+    flattenToc(mobiBook.toc as any[], 0, items)
+  }
+  if (!items.length && mobiBook?.spineIds.length) {
+    mobiBook.spineIds.forEach((id, idx) => {
+      items.push({
+        id: `spine-${id}`,
+        label: `第 ${idx + 1} 章`,
+        href: id,
+        level: 0,
+      })
+    })
+  }
+  tocItems.value = items
+}
+
+function ensureMobiFrame(el: HTMLElement): HTMLIFrameElement {
+  el.innerHTML = ''
+  const frame = document.createElement('iframe')
+  frame.className = 'mobi-frame'
+  frame.title = 'mobi'
+  frame.setAttribute('sandbox', 'allow-same-origin allow-popups allow-popups-to-escape-sandbox')
+  el.appendChild(frame)
+  mobiFrame = frame
+  bindMobiFrameNav(frame)
+  return frame
+}
+
+function bindMobiFrameNav(frame: HTMLIFrameElement) {
+  frame.addEventListener('load', () => {
+    const doc = frame.contentDocument
+    const win = frame.contentWindow
+    if (!doc) return
+    const onWheel = (e: WheelEvent) => onMobiWheel(e)
+    const onClick = (e: MouseEvent) => onMobiTapTurn(e, win || undefined)
+    const onDocClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.('a') as HTMLAnchorElement | null
+      if (!a) return
+      const href = a.getAttribute('href') || ''
+      if (!href || href.startsWith('http:') || href.startsWith('https:') || href.startsWith('mailto:')) return
+      e.preventDefault()
+      void jumpMobiHref(href)
+    }
+    doc.addEventListener('wheel', onWheel, { passive: false })
+    doc.addEventListener('click', onClick)
+    doc.addEventListener('click', onDocClick)
+  })
+}
+
+async function showMobiChapter(index: number, selector?: string) {
+  if (!mobiBook) return
+  const ids = mobiBook.spineIds
+  if (!ids.length) throw new Error('电子书没有可阅读章节')
+  const i = Math.min(Math.max(0, index), ids.length - 1)
+  const id = ids[i]
+  const chapter = mobiBook.loadChapter(id)
+  if (!chapter) throw new Error('章节内容加载失败')
+
+  const el = epubViewerRef.value
+  if (!el) return
+  const frame = mobiFrame && mobiFrame.isConnected ? mobiFrame : ensureMobiFrame(el)
+  frame.srcdoc = buildMobiChapterDocument(chapter, {
+    fontPx: readerFontSize.value,
+    theme: readerTheme.value,
+  })
+  mobiChapterIndex.value = i
+  chapterLabel.value = `第 ${i + 1} / ${ids.length} 章`
+
+  const hit = tocItems.value.find((t) => {
+    const resolved = mobiBook?.resolveHref(t.href)
+    return resolved?.id === id || t.href === id
+  })
+  if (hit) {
+    activeTocId.value = hit.id
+    if (hit.label) chapterLabel.value = hit.label
+  }
+
+  if (selector) {
+    frame.addEventListener(
+      'load',
+      () => {
+        try {
+          frame.contentDocument?.querySelector(selector)?.scrollIntoView({ block: 'start' })
+        } catch {
+          /* ignore */
+        }
+      },
+      { once: true },
+    )
+  }
+}
+
+async function jumpMobiHref(href: string) {
+  if (!mobiBook) return
+  const resolved = mobiBook.resolveHref(href)
+  if (!resolved) return
+  const idx = mobiBook.spineIds.indexOf(resolved.id)
+  if (idx < 0) return
+  await showMobiChapter(idx, resolved.selector)
+}
+
+async function goMobiToc(item: TocItem) {
+  if (!mobiBook) return
+  activeTocId.value = item.id
+  chapterLabel.value = item.label
+  const resolved = mobiBook.resolveHref(item.href)
+  if (resolved) {
+    const idx = mobiBook.spineIds.indexOf(resolved.id)
+    if (idx >= 0) {
+      await showMobiChapter(idx, resolved.selector)
+      return
+    }
+  }
+  // 目录项可能直接是 spine id
+  const direct = mobiBook.spineIds.indexOf(item.href)
+  if (direct >= 0) {
+    await showMobiChapter(direct)
+    return
+  }
+  // 尝试按顺序匹配
+  const byLabel = tocItems.value.findIndex((t) => t.id === item.id)
+  if (byLabel >= 0 && byLabel < mobiBook.spineIds.length) {
+    await showMobiChapter(byLabel)
+  }
+}
+
+function mobiPrev() {
+  if (!mobiBook || mobiChapterIndex.value <= 0) return
+  void showMobiChapter(mobiChapterIndex.value - 1)
+}
+function mobiNext() {
+  if (!mobiBook || mobiChapterIndex.value >= mobiBook.spineIds.length - 1) return
+  void showMobiChapter(mobiChapterIndex.value + 1)
+}
+
+function onMobiWheel(e: WheelEvent) {
+  if (props.type !== 'mobi' || !mobiBook) return
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+  const frame = mobiFrame
+  const doc = frame?.contentDocument
+  const scrolling = doc?.scrollingElement || doc?.documentElement
+  if (scrolling) {
+    const atTop = scrolling.scrollTop <= 2
+    const atBottom = scrolling.scrollTop + scrolling.clientHeight >= scrolling.scrollHeight - 2
+    if (e.deltaY < 0 && !atTop) return
+    if (e.deltaY > 0 && !atBottom) return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+  if (wheelLock) return
+
+  let delta = e.deltaY
+  if (e.deltaMode === 1) delta *= 16
+  else if (e.deltaMode === 2) delta *= WHEEL_THRESHOLD
+
+  wheelAcc += delta
+  if (Math.abs(wheelAcc) < WHEEL_THRESHOLD) return
+  const dir: 1 | -1 = wheelAcc > 0 ? 1 : -1
+  wheelAcc = 0
+  wheelLock = true
+  if (dir > 0) mobiNext()
+  else mobiPrev()
+  if (wheelUnlockTimer) clearTimeout(wheelUnlockTimer)
+  wheelUnlockTimer = setTimeout(() => {
+    wheelLock = false
+    wheelAcc = 0
+    wheelUnlockTimer = null
+  }, WHEEL_COOLDOWN_MS)
+}
+
+function onMobiTapTurn(e: MouseEvent, win?: Window) {
+  if (props.type !== 'mobi' || !mobiBook) return
+  const target = e.target as HTMLElement | null
+  if (!target) return
+  if (target.closest?.('a, button, input, textarea, select, summary, label')) return
+  const selection = (win || window).getSelection?.()
+  if (selection && !selection.isCollapsed && String(selection).trim()) return
+
+  const viewer = epubViewerRef.value
+  if (!viewer) return
+  const rect = viewer.getBoundingClientRect()
+  let clientX = e.clientX
+  if (win && win !== window) {
+    const frameEl = win.frameElement as HTMLElement | null
+    if (frameEl) {
+      const fr = frameEl.getBoundingClientRect()
+      clientX = fr.left + e.clientX
+    }
+  }
+  const ratio = (clientX - rect.left) / Math.max(rect.width, 1)
+  if (ratio < 0.28) mobiPrev()
+  else if (ratio > 0.72) mobiNext()
+}
+
+async function loadMobi(seq: number) {
+  const buf = await fetchPreviewResource(activeId())
+  if (!buf || buf.byteLength < 68) {
+    throw new Error('MOBI 文件无效或为空')
+  }
+  loading.value = false
+  const el = await waitForEpubEl(seq)
+  el.innerHTML = ''
+
+  try {
+    mobiBook = await openMobiBook(buf)
+  } catch (e: any) {
+    throw new Error(e?.message || 'MOBI 解析失败')
+  }
+  if (seq !== loadSeq) return
+
+  if (mobiBook.title) bookTitle.value = fixMojibake(mobiBook.title)
+  buildMobiToc()
+  ensureMobiFrame(el)
+  el.addEventListener('wheel', onMobiWheel, { passive: false })
+  el.addEventListener('click', onMobiTapTurn as EventListener)
+  window.addEventListener('keydown', onKey)
+  await showMobiChapter(0)
+}
+
 function onKey(e: KeyboardEvent) {
   if (!isTopmostWindow(props.zIndex)) return
   if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
@@ -1291,7 +1710,24 @@ function onKey(e: KeyboardEvent) {
     }
     return
   }
-  if (props.type !== 'epub' || epubFlow !== 'paginated') return
+  if (props.type !== 'epub' || epubFlow !== 'paginated') {
+    if (props.type === 'mobi') {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault()
+        mobiPrev()
+      } else if (
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowDown' ||
+        e.key === 'PageDown' ||
+        e.key === ' ' ||
+        e.key === 'Spacebar'
+      ) {
+        e.preventDefault()
+        mobiNext()
+      }
+    }
+    return
+  }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
     e.preventDefault()
     epubPrev()
@@ -1602,6 +2038,7 @@ async function load() {
 }
 .epub-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
@@ -1611,6 +2048,62 @@ async function load() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-left: auto;
+  max-width: 36%;
+}
+.reader-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.12);
+}
+.reader-font-btn {
+  min-width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reader-font-btn:hover:not(:disabled) {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+.reader-font-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.reader-font-label {
+  min-width: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+.reader-bg-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(148, 163, 184, 0.35);
+}
+.reader-bg-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  cursor: pointer;
+  padding: 0;
+}
+.reader-bg-swatch.active {
+  outline: 2px solid #0f766e;
+  outline-offset: 1px;
 }
 .epub-main {
   flex: 1;
@@ -1680,6 +2173,14 @@ async function load() {
   min-height: 0;
   background: #fff;
   overflow: hidden;
+  position: relative;
+}
+.epub-viewer :deep(.mobi-frame) {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #fff;
 }
 .pdf-frame {
   border: 0;
@@ -1914,6 +2415,7 @@ async function load() {
 .md-toolbar {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
